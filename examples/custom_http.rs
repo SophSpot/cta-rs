@@ -47,7 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Rust doesn't let you implement this crate's trait directly on another crate's type.
     let client = AsyncClient::with_http("not-a-real-key", Logged(Canned(RESPONSE)));
 
-    for a in client.arrivals(&ArrivalsQuery::at(StationId(40380))).await? {
+    for a in client
+        .arrivals(&ArrivalsQuery::at(StationId(40380)))
+        .await?
+    {
         println!("{} Line to {} at {}", a.route, a.destination, a.station);
     }
     Ok(())

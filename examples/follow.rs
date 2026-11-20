@@ -24,7 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("No {route} Line trains in service.");
         return Ok(());
     };
-    println!("Following {route} Line run {} to {}\n", train.run, train.destination);
+    println!(
+        "Following {route} Line run {} to {}\n",
+        train.run, train.destination
+    );
 
     // A run can end between the two requests, when the train reaches its terminal.
     let followed = match client.follow(&train.run).await {
@@ -37,10 +40,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if let Some(p) = followed.position {
-        println!("Now at {:.5}, {:.5}, heading {}°\n", p.lat, p.lon, p.heading);
+        println!(
+            "Now at {:.5}, {:.5}, heading {}°\n",
+            p.lat, p.lon, p.heading
+        );
     }
     for stop in &followed.stops {
-        println!("{}  {}", stop.arrival_time.strftime("%-I:%M %p"), stop.station);
+        println!(
+            "{}  {}",
+            stop.arrival_time.strftime("%-I:%M %p"),
+            stop.station
+        );
     }
     Ok(())
 }

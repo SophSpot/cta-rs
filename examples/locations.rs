@@ -35,7 +35,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{route} Line: {} trains, {delayed} delayed", on_line.len());
 
         for t in on_line {
-            let status = if t.approaching { "arriving at" } else { "next stop" };
+            let status = if t.approaching {
+                "arriving at"
+            } else {
+                "next stop"
+            };
             let position = t
                 .position
                 .map(|p| format!("({:.4}, {:.4})", p.lat, p.lon))

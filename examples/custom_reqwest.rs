@@ -20,7 +20,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // so you can pass a clone here and keep using `http` elsewhere.
     let client = AsyncClient::with_http(std::env::var("CTA_TRAIN_API_KEY")?, http.clone());
 
-    let arrivals = client.arrivals(&ArrivalsQuery::at(StationId(40380))).await?;
+    let arrivals = client
+        .arrivals(&ArrivalsQuery::at(StationId(40380)))
+        .await?;
     println!("{} arrivals at Clark/Lake", arrivals.len());
     Ok(())
 }

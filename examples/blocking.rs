@@ -21,8 +21,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("{} {route} Line trains in service\n", trains.len());
     for t in &trains {
-        let status = if t.approaching { "arriving at" } else { "next stop" };
-        println!("run {:>4} to {:<16} {status} {}", t.run, t.destination, t.next_station);
+        let status = if t.approaching {
+            "arriving at"
+        } else {
+            "next stop"
+        };
+        println!(
+            "run {:>4} to {:<16} {status} {}",
+            t.run, t.destination, t.next_station
+        );
     }
     Ok(())
 }
