@@ -1,0 +1,52 @@
+[package]
+name = "cta"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Client for the CTA Train Tracker API: arrivals, train locations, and runs for the Chicago 'L'"
+repository = "https://github.com/SophSpot/cta"
+readme = "README.md"
+keywords = ["cta", "chicago", "transit", "train", "api"]
+categories = ["api-bindings", "web-programming::http-client"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+default = ["reqwest"]
+reqwest = ["dep:reqwest"]
+serde = ["jiff/serde"]
+ureq = ["dep:ureq"]
+
+[dependencies]
+jiff = "1.0.1"
+reqwest = { version = "0.13.5", optional = true }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+ureq = { version = "3.5.2", optional = true }
+url = "2.5.8"
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
+
+[[example]]
+name = "arrivals"
+required-features = ["reqwest"]
+
+[[example]]
+name = "blocking"
+required-features = ["ureq"]
+
+[[example]]
+name = "locations"
+required-features = ["reqwest"]
+
+[[example]]
+name = "follow"
+required-features = ["reqwest"]
+
+[[example]]
+name = "custom_reqwest"
+required-features = ["reqwest"]
