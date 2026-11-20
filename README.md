@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/SophSpot/cta-rs/graph/badge.svg)](https://codecov.io/gh/SophSpot/cta-rs)
+
 # cta
 
 A Rust client for the [CTA Train Tracker API](https://www.transitchicago.com/developers/traintracker/): live arrival predictions, train locations, and individual train runs for the Chicago 'L'.
