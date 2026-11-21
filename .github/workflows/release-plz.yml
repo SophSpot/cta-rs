@@ -1,0 +1,48 @@
+name: Release-plz
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # Publishes to crates.io and creates the tag and GitHub release, but only when
+  # Cargo.toml's version isn't on crates.io yet (i.e. right after a release PR merges).
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # tags and GitHub releases
+      id-token: write # Trusted Publishing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  # Opens or updates the "release PR": version bump plus CHANGELOG.md entries.
+  release-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -9,6 +9,7 @@ repository = "https://github.com/SophSpot/cta-rs"
 readme = "README.md"
 keywords = ["cta", "chicago", "transit", "train", "api"]
 categories = ["api-bindings", "web-programming::http-client"]
+exclude = [".github", "release-plz.toml"]
 
 [package.metadata.docs.rs]
 all-features = true
