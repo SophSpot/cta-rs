@@ -29,7 +29,9 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use url::Url;
 
-pub use arrivals::{Arrival, ArrivalsQuery, Location, arrivals_request, parse_arrivals};
+pub use arrivals::{
+    Arrival, ArrivalsQuery, Location, QueryError, arrivals_request, parse_arrivals,
+};
 pub use follow::{FollowedTrain, follow_request, parse_follow};
 pub use locations::{LocationsQuery, TrainLocation, locations_request, parse_locations};
 

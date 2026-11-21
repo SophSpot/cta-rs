@@ -80,19 +80,27 @@ Each method exists on both `AsyncClient` and `BlockingClient`.
 
 | Method | Query | Returns |
 |---|---|---|
-| `arrivals` | `ArrivalsQuery::at(StationId(..))` or `ArrivalsQuery::at(StopId(..))`, optionally with `.route(..)` and `.max(..)` | Predicted arrivals at a station or platform |
+| `arrivals` | `ArrivalsQuery::at(..)`, `::stations([..])?`, or `::stops([..])?`, optionally with `.routes([..])` and `.max(..)?` | Predicted arrivals at up to 4 stations or platforms |
 | `locations` | `LocationsQuery::route(..)`, `::routes([..])`, or `::all()` | Every train in service on those lines, with its next stop and position |
 | `follow` | A run number, such as `arrival.run` | One train's position and its upcoming stops |
 
 ```rust
-use cta::trains::{ArrivalsQuery, LocationsQuery, Route, StopId};
+use cta::trains::{ArrivalsQuery, LocationsQuery, Route, StationId, StopId};
 
-// The next 3 Brown Line trains at one platform
-let query = ArrivalsQuery::at(StopId(30074)).route(Route::Brown).max(3);
+// Two stations in one request
+let query = ArrivalsQuery::stations([StationId(40380), StationId(40360)])?;
+
+// The next 3 Brown or Orange Line trains at one platform
+let query = ArrivalsQuery::at(StopId(30074))
+    .routes([Route::Brown, Route::Orange])
+    .max(3)?;
 
 // Every train on the Loop lines
 let query = LocationsQuery::routes([Route::Brown, Route::Orange, Route::Pink, Route::Purple]);
 ```
+
+`stations`, `stops`, and `max` return a `QueryError` for requests the CTA would reject:
+no locations, more than 4 stations or stops, or `max(0)`.
 
 Station IDs (4xxxx) cover every platform at a station, and stop IDs (3xxxx) are a single platform. Both are listed in the City of Chicago's [L stops dataset](https://data.cityofchicago.org/Transportation/CTA-System-Information-List-of-L-Stops/8pix-ypme).
 

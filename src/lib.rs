@@ -48,7 +48,7 @@
 //!
 //! | Method | What it returns |
 //! |---|---|
-//! | `arrivals` | Predicted arrivals at a station or a single platform ([`trains::Arrival`]) |
+//! | `arrivals` | Predicted arrivals at up to 4 stations or platforms ([`trains::Arrival`]) |
 //! | `locations` | Every train currently running on one or more lines ([`trains::TrainLocation`]) |
 //! | `follow` | One train's position and its upcoming stops ([`trains::FollowedTrain`]) |
 //!

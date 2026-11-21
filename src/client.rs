@@ -63,14 +63,16 @@ impl<H> fmt::Debug for AsyncClient<H> {
 }
 
 impl<H: AsyncHttpClient> AsyncClient<H> {
-    /// Predicted arrivals at a station or stop.
+    /// Predicted arrivals at the stations or stops in `query`.
     ///
     /// ```no_run
     /// # #[cfg(feature = "reqwest")]
     /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
     /// use cta::trains::{ArrivalsQuery, Route, StationId};
     ///
-    /// let query = ArrivalsQuery::at(StationId(40380)).route(Route::Blue).max(5);
+    /// let query = ArrivalsQuery::stations([StationId(40380), StationId(40360)])?
+    ///     .routes([Route::Blue, Route::Brown])
+    ///     .max(5)?;
     /// let arrivals = client.arrivals(&query).await?;
     /// # Ok(())
     /// # }
@@ -192,7 +194,7 @@ impl<H> fmt::Debug for BlockingClient<H> {
 }
 
 impl<H: BlockingHttpClient> BlockingClient<H> {
-    /// Predicted arrivals at a station or stop.
+    /// Predicted arrivals at the stations or stops in `query`.
     pub fn arrivals(&self, query: &ArrivalsQuery) -> Result<Vec<Arrival>, Error<H::Error>> {
         let req = arrivals_request(&self.base_url, &self.key, query);
         let body = self.http.get(&req.url).map_err(Error::Http)?;

@@ -140,6 +140,41 @@ impl From<StopId> for Location {
     }
 }
 
+/// The stations or stops an arrivals query covers. Never empty, at most 4.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Locations {
+    Stations(Vec<StationId>),
+    Stops(Vec<StopId>),
+}
+
+/// Remove duplicates, keeping the first occurrence.
+fn dedup<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut out = Vec::new();
+    for item in items {
+        if !out.contains(&item) {
+            out.push(item);
+        }
+    }
+    out
+}
+/// An [`ArrivalsQuery`] the CTA would reject, caught before any request is sent.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum QueryError {
+    /// No stations or stops were given.
+    #[error("an arrivals query needs at least one station or stop")]
+    NoLocations,
+    /// More stations than the CTA accepts in one request (its error 105).
+    #[error("too many stations: {0} (the CTA accepts at most 4)")]
+    TooManyStations(usize),
+    /// More stops than the CTA accepts in one request (its error 109).
+    #[error("too many stops: {0} (the CTA accepts at most 4)")]
+    TooManyStops(usize),
+    /// `max` was 0. The CTA requires a positive number (its error 111).
+    #[error("max must be at least 1")]
+    ZeroMax,
+}
+
 /// Which arrivals to fetch.
 ///
 /// ```
@@ -154,30 +189,80 @@ impl From<StopId> for Location {
 #[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArrivalsQuery {
-    location: Location,
+    locations: Locations,
     max: Option<NonZeroU32>,
-    route: Option<Route>,
+    routes: Vec<Route>,
 }
 
 impl ArrivalsQuery {
-    /// Arrivals at a station ([`StationId`]) or a single platform ([`StopId`]).
-    pub fn at(location: impl Into<Location>) -> Self {
+    /// The most stations, or the most stops, one query can cover.
+    pub const MAX_LOCATIONS: usize = 4;
+
+    fn new(locations: Locations) -> Self {
         Self {
-            location: location.into(),
+            locations,
             max: None,
-            route: None,
+            routes: Vec::new(),
         }
     }
 
-    /// Return at most `max` arrivals. `0` means no limit, the same as not calling this.
-    pub fn max(mut self, max: u32) -> Self {
-        self.max = NonZeroU32::new(max);
-        self
+    /// Arrivals at one station ([`StationId`]) or one platform ([`StopId`]).
+    pub fn at(location: impl Into<Location>) -> Self {
+        Self::new(match location.into() {
+            Location::Station(id) => Locations::Stations(vec![id]),
+            Location::Stop(id) => Locations::Stops(vec![id]),
+        })
     }
 
-    /// Only include trains on `route`.
-    pub fn route(mut self, route: Route) -> Self {
-        self.route = Some(route);
+    /// Arrivals at up to 4 stations in one request. Duplicates are ignored.
+    ///
+    /// # Errors
+    ///
+    /// [`QueryError::NoLocations`] if `ids` is empty, or
+    /// [`QueryError::TooManyStations`] if it has more than 4 distinct IDs.
+    pub fn stations(ids: impl IntoIterator<Item = StationId>) -> Result<Self, QueryError> {
+        let ids = dedup(ids);
+        match ids.len() {
+            0 => Err(QueryError::NoLocations),
+            n if n > Self::MAX_LOCATIONS => Err(QueryError::TooManyStations(n)),
+            _ => Ok(Self::new(Locations::Stations(ids))),
+        }
+    }
+
+    /// Arrivals at up to 4 platforms in one request. Duplicates are ignored.
+    ///
+    /// # Errors
+    ///
+    /// [`QueryError::NoLocations`] if `ids` is empty, or
+    /// [`QueryError::TooManyStops`] if it has more than 4 distinct IDs.
+    pub fn stops(ids: impl IntoIterator<Item = StopId>) -> Result<Self, QueryError> {
+        let ids = dedup(ids);
+        match ids.len() {
+            0 => Err(QueryError::NoLocations),
+            n if n > Self::MAX_LOCATIONS => Err(QueryError::TooManyStops(n)),
+            _ => Ok(Self::new(Locations::Stops(ids))),
+        }
+    }
+
+    /// Return at most `max` arrivals. Without this, all predicted arrivals are returned.
+    ///
+    /// # Errors
+    ///
+    /// [`QueryError::ZeroMax`] if `max` is 0.
+    pub fn max(mut self, max: u32) -> Result<Self, QueryError> {
+        self.max = Some(NonZeroU32::new(max).ok_or(QueryError::ZeroMax)?);
+        Ok(self)
+    }
+
+    /// Only include trains on `route`. Replaces any routes set before.
+    pub fn route(self, route: Route) -> Self {
+        self.routes([route])
+    }
+
+    /// Only include trains on these routes. Duplicates are ignored, and an empty list
+    /// means every route. Replaces any routes set before.
+    pub fn routes(mut self, routes: impl IntoIterator<Item = Route>) -> Self {
+        self.routes = dedup(routes);
         self
     }
 }
@@ -203,15 +288,25 @@ pub fn arrivals_request(base: &Url, key: &str, query: &ArrivalsQuery) -> Request
     {
         let mut q = url.query_pairs_mut();
 
-        let (name, id) = query.location.param();
-        q.append_pair("key", key)
-            .append_pair(name, &id)
-            .append_pair("outputType", "JSON");
+        q.append_pair("key", key);
+        match &query.locations {
+            Locations::Stations(ids) => {
+                for id in ids {
+                    q.append_pair("mapid", &id.to_string());
+                }
+            }
+            Locations::Stops(ids) => {
+                for id in ids {
+                    q.append_pair("stpid", &id.to_string());
+                }
+            }
+        }
+        q.append_pair("outputType", "JSON");
 
         if let Some(max) = query.max {
             q.append_pair("max", &max.to_string());
         }
-        if let Some(rt) = &query.route {
+        for rt in &query.routes {
             q.append_pair("rt", rt.code());
         }
     }
@@ -334,7 +429,10 @@ mod tests {
     #[test]
     fn request_for_stop_with_options() {
         let base = Url::parse(DEFAULT_BASE_URL).unwrap();
-        let q = ArrivalsQuery::at(StopId(30074)).max(3).route(Route::Brown);
+        let q = ArrivalsQuery::at(StopId(30074))
+            .max(3)
+            .unwrap()
+            .route(Route::Brown);
         let req = arrivals_request(&base, "k", &q);
         assert_eq!(
             req.url.query(),
@@ -343,10 +441,85 @@ mod tests {
     }
 
     #[test]
-    fn max_zero_sends_no_limit() {
+    fn max_zero_is_rejected() {
+        assert_eq!(
+            ArrivalsQuery::at(StationId(40380)).max(0),
+            Err(QueryError::ZeroMax)
+        );
+    }
+
+    #[test]
+    fn several_stations_send_repeated_mapids() {
         let base = Url::parse(DEFAULT_BASE_URL).unwrap();
-        let req = arrivals_request(&base, "k", &ArrivalsQuery::at(StationId(40380)).max(0));
-        assert!(!req.url.query().unwrap().contains("max="));
+        let q = ArrivalsQuery::stations([StationId(40380), StationId(40360)]).unwrap();
+        let req = arrivals_request(&base, "k", &q);
+        assert_eq!(
+            req.url.query(),
+            Some("key=k&mapid=40380&mapid=40360&outputType=JSON")
+        );
+    }
+
+    #[test]
+    fn several_stops_send_repeated_stpids() {
+        let base = Url::parse(DEFAULT_BASE_URL).unwrap();
+        let q = ArrivalsQuery::stops([StopId(30074), StopId(30075)]).unwrap();
+        let req = arrivals_request(&base, "k", &q);
+        assert_eq!(
+            req.url.query(),
+            Some("key=k&stpid=30074&stpid=30075&outputType=JSON")
+        );
+    }
+
+    #[test]
+    fn location_limits() {
+        let four = [40380, 40590, 40670, 40570].map(StationId);
+        assert!(ArrivalsQuery::stations(four).is_ok());
+
+        let five = [40380, 40590, 40670, 40570, 40890].map(StationId);
+        assert_eq!(
+            ArrivalsQuery::stations(five),
+            Err(QueryError::TooManyStations(5))
+        );
+
+        let five = [30074, 30075, 30375, 30374, 30115].map(StopId);
+        assert_eq!(ArrivalsQuery::stops(five), Err(QueryError::TooManyStops(5)));
+
+        assert_eq!(ArrivalsQuery::stations([]), Err(QueryError::NoLocations));
+        assert_eq!(ArrivalsQuery::stops([]), Err(QueryError::NoLocations));
+    }
+
+    #[test]
+    fn duplicate_locations_count_once() {
+        let ids = [40380, 40380, 40590, 40590, 40670].map(StationId);
+        assert!(ArrivalsQuery::stations(ids).is_ok()); // 3 distinct
+    }
+
+    #[test]
+    fn routes_send_repeated_rt_and_dedupe() {
+        let base = Url::parse(DEFAULT_BASE_URL).unwrap();
+        let q = ArrivalsQuery::at(StationId(40380)).routes([
+            Route::Blue,
+            Route::Brown,
+            Route::Blue,
+            Route::Green,
+            Route::Orange,
+            Route::Pink,
+        ]);
+        let req = arrivals_request(&base, "k", &q);
+        assert_eq!(
+            req.url.query(),
+            Some("key=k&mapid=40380&outputType=JSON&rt=Blue&rt=Brn&rt=G&rt=Org&rt=Pink")
+        );
+    }
+
+    #[test]
+    fn route_replaces_routes() {
+        let base = Url::parse(DEFAULT_BASE_URL).unwrap();
+        let q = ArrivalsQuery::at(StationId(40380))
+            .routes([Route::Blue, Route::Red])
+            .route(Route::Pink);
+        let req = arrivals_request(&base, "k", &q);
+        assert!(req.url.query().unwrap().ends_with("&rt=Pink"));
     }
 
     #[cfg(feature = "serde")]
