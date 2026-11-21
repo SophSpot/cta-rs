@@ -119,12 +119,20 @@ pub enum ApiErrorKind {
     InvalidStop,
     /// The `max` value is not valid (110).
     InvalidMax,
-    /// No API key was sent (100).
-    MissingKey,
+    /// A required parameter was missing from the request (100).
+    MissingParameter,
     /// No train with this run number is in service (501).
     ///
     /// Expected in normal use: a run ends when the train reaches its terminal.
     RunNotFound,
+    /// The train exists, but the CTA can't determine its upcoming stops (502).
+    ///
+    /// Returned by `follow`. The train may be heading to an unexpected terminal.
+    NoUpcomingStops,
+    /// The train exists, but none of its predictions are for active stations (503).
+    ///
+    /// Returned by `follow`.
+    NoPredictions,
     /// The CTA had an internal error (900).
     ServerError,
     /// A code without a named kind. Check [`ApiError::code`].
@@ -142,7 +150,7 @@ impl ApiError {
     /// ```
     pub fn kind(&self) -> ApiErrorKind {
         match self.code {
-            100 => ApiErrorKind::MissingKey,
+            100 => ApiErrorKind::MissingParameter,
             101 => ApiErrorKind::InvalidKey,
             102 => ApiErrorKind::DailyLimitExceeded,
             103 => ApiErrorKind::InvalidStation,
@@ -150,6 +158,8 @@ impl ApiError {
             108 => ApiErrorKind::InvalidStop,
             110 => ApiErrorKind::InvalidMax,
             501 => ApiErrorKind::RunNotFound,
+            502 => ApiErrorKind::NoUpcomingStops,
+            503 => ApiErrorKind::NoPredictions,
             900 => ApiErrorKind::ServerError,
             _ => ApiErrorKind::Other,
         }
@@ -254,7 +264,7 @@ mod tests {
     /// means adding a variant to `ApiErrorKind` won't compile until it's listed here.
     fn code_for(kind: ApiErrorKind) -> Option<u16> {
         match kind {
-            ApiErrorKind::MissingKey => Some(100),
+            ApiErrorKind::MissingParameter => Some(100),
             ApiErrorKind::InvalidKey => Some(101),
             ApiErrorKind::DailyLimitExceeded => Some(102),
             ApiErrorKind::InvalidStation => Some(103),
@@ -262,13 +272,15 @@ mod tests {
             ApiErrorKind::InvalidStop => Some(108),
             ApiErrorKind::InvalidMax => Some(110),
             ApiErrorKind::RunNotFound => Some(501),
+            ApiErrorKind::NoUpcomingStops => Some(502),
+            ApiErrorKind::NoPredictions => Some(503),
             ApiErrorKind::ServerError => Some(900),
             ApiErrorKind::Other => None,
         }
     }
 
-    const NAMED: [ApiErrorKind; 9] = [
-        ApiErrorKind::MissingKey,
+    const NAMED: [ApiErrorKind; 11] = [
+        ApiErrorKind::MissingParameter,
         ApiErrorKind::InvalidKey,
         ApiErrorKind::DailyLimitExceeded,
         ApiErrorKind::InvalidStation,
@@ -276,6 +288,8 @@ mod tests {
         ApiErrorKind::InvalidStop,
         ApiErrorKind::InvalidMax,
         ApiErrorKind::RunNotFound,
+        ApiErrorKind::NoPredictions,
+        ApiErrorKind::NoUpcomingStops,
         ApiErrorKind::ServerError,
     ];
 
@@ -297,7 +311,7 @@ mod tests {
 
     #[test]
     fn unlisted_codes_are_other() {
-        for code in [1, 104, 105, 107, 109, 111, 500, 502, 999, u16::MAX] {
+        for code in [1, 104, 105, 107, 109, 111, 500, 504, 999, u16::MAX] {
             assert_eq!(api(code).kind(), ApiErrorKind::Other, "code {code}");
         }
     }
