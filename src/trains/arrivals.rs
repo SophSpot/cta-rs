@@ -1,7 +1,7 @@
-use super::{Position, Request, Route, StationId, StopId, parse_envelope, position};
+use super::{Position, Route, StationId, StopId, parse_envelope, position};
 use crate::chicago; // best city in da world
 use crate::deserializers::{flag, from_str, one_or_many, opt_from_str};
-use crate::{DecodeError, ResponseError};
+use crate::{DecodeError, Request, ResponseError};
 use jiff::{SignedDuration, ZonedDateTime, civil, tz::TimeZone};
 use serde::Deserialize;
 use std::fmt::{Display, Formatter};

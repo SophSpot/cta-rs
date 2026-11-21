@@ -26,8 +26,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     .routes(args.routes);
 
-    let client = AsyncClient::new(key);
-    let arrivals = client.arrivals(&query).await?;
+    let client = AsyncClient::builder().train_key(key).build();
+    let arrivals = client.trains().arrivals(&query).await?;
 
     // One board per requested ID, in the order given.
     for &id in &args.ids {

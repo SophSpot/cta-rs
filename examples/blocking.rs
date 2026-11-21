@@ -16,8 +16,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or("red")
         .parse()?;
 
-    let client = BlockingClient::new(key);
-    let trains = client.locations(&LocationsQuery::route(route))?;
+    let client = BlockingClient::builder().train_key(key).build();
+    let trains = client.trains().locations(&LocationsQuery::route(route))?;
 
     println!("{} {route} Line trains in service\n", trains.len());
     for t in &trains {

@@ -17,9 +17,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or("red")
         .parse()?;
 
-    let client = AsyncClient::new(key);
+    let client = AsyncClient::builder().train_key(key).build();
 
-    let trains = client.locations(&LocationsQuery::route(route)).await?;
+    let trains = client
+        .trains()
+        .locations(&LocationsQuery::route(route))
+        .await?;
     let Some(train) = trains.first() else {
         println!("No {route} Line trains in service.");
         return Ok(());
@@ -30,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // A run can end between the two requests, when the train reaches its terminal.
-    let followed = match client.follow(&train.run).await {
+    let followed = match client.trains().follow(&train.run).await {
         Ok(followed) => followed,
         Err(Error::Api(e)) if e.kind() == ApiErrorKind::RunNotFound => {
             println!("Run {} just finished. Try again.", train.run);

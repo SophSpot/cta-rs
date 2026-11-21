@@ -1,8 +1,8 @@
 use super::arrivals::{RawEta, to_arrival};
-use super::{Arrival, Position, Request, parse_envelope, position};
+use super::{Arrival, Position, parse_envelope, position};
 use crate::chicago;
 use crate::deserializers::{one_or_many, opt_from_str};
-use crate::{DecodeError, ResponseError};
+use crate::{DecodeError, Request, ResponseError};
 use serde::Deserialize;
 use url::Url;
 

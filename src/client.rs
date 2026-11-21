@@ -1,13 +1,171 @@
 //! Async and blocking clients, and the traits for plugging in an HTTP client.
 
-use crate::Error;
 use crate::trains::{
     Arrival, ArrivalsQuery, DEFAULT_BASE_URL, FollowedTrain, LocationsQuery, TrainLocation,
     arrivals_request, follow_request, locations_request, parse_arrivals, parse_follow,
     parse_locations,
 };
+use crate::{Api, Error, Request, ResponseError};
 use std::fmt;
+use std::marker::PhantomData;
 use url::Url;
+
+#[derive(Clone)]
+struct Config {
+    train_key: Option<String>,
+    train_base: Url,
+}
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            train_key: None,
+            train_base: Url::parse(DEFAULT_BASE_URL).expect("default base URL is valid"),
+        }
+    }
+}
+
+impl Config {
+    /// The Train Tracker base URL and key, or which key is missing.
+    fn train(&self) -> Result<(&Url, &str), Api> {
+        let key = self.train_key.as_deref().ok_or(Api::Train)?;
+        Ok((&self.train_base, key))
+    }
+}
+
+impl fmt::Debug for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Config")
+            .field("train_key", &self.train_key.as_ref().map(|_| "REDACTED"))
+            .field("train_base_url", &self.train_base.as_str())
+            .finish()
+    }
+}
+
+/// Add a trailing `/` so `Url::join` appends to the path instead of replacing its last segment.
+fn with_trailing_slash(mut url: Url) -> Url {
+    if !url.path().ends_with('/') {
+        let path = format!("{}/", url.path());
+        url.set_path(&path);
+    }
+    url
+}
+trait Endpoint {
+    type Output;
+    /// Build the request, or report which API's key is missing.
+    fn request(&self, config: &Config) -> Result<Request, Api>;
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError>;
+}
+
+struct ArrivalsCall<'a>(&'a ArrivalsQuery);
+struct LocationsCall<'a>(&'a LocationsQuery);
+struct FollowCall<'a>(&'a str);
+
+impl Endpoint for ArrivalsCall<'_> {
+    type Output = Vec<Arrival>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.train()?;
+        Ok(arrivals_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        parse_arrivals(body)
+    }
+}
+
+impl Endpoint for LocationsCall<'_> {
+    type Output = Vec<TrainLocation>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.train()?;
+        Ok(locations_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        parse_locations(body)
+    }
+}
+
+impl Endpoint for FollowCall<'_> {
+    type Output = FollowedTrain;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.train()?;
+        Ok(follow_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        parse_follow(body)
+    }
+}
+
+/// Builder marker: the builder makes an [`AsyncClient`].
+#[derive(Debug, Clone, Copy)]
+pub struct Async;
+
+/// Builder marker: the builder makes a [`BlockingClient`].
+#[derive(Debug, Clone, Copy)]
+pub struct Blocking;
+
+/// Builder placeholder: no HTTP client set, so `build` uses the default one.
+#[derive(Debug, Clone, Copy)]
+pub struct DefaultHttp;
+
+/// Builds an [`AsyncClient`] or a [`BlockingClient`].
+///
+/// Start from [`AsyncClient::builder`] or [`BlockingClient::builder`]. Every setting is
+/// optional: a client without a key is valid, and calling an API that needs the missing
+/// key returns [`Error::MissingKey`] without sending a request.
+///
+/// ```
+/// # #[cfg(feature = "reqwest")] {
+/// use cta::AsyncClient;
+///
+/// let client = AsyncClient::builder()
+///     .train_key("your-train-tracker-key")
+///     .build();
+/// # }
+/// ```
+#[must_use]
+pub struct ClientBuilder<M, H> {
+    config: Config,
+    http: H,
+    mode: PhantomData<M>,
+}
+
+impl<M, H> fmt::Debug for ClientBuilder<M, H> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClientBuilder")
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<M, H> ClientBuilder<M, H> {
+    fn new(http: H) -> Self {
+        Self {
+            config: Config::default(),
+            http,
+            mode: PhantomData,
+        }
+    }
+
+    /// The Train Tracker API key, used by [`AsyncClient::trains`] and
+    /// [`BlockingClient::trains`].
+    pub fn train_key(mut self, key: impl Into<String>) -> Self {
+        self.config.train_key = Some(key.into());
+        self
+    }
+
+    /// Send Train Tracker requests to `url` instead of the CTA, e.g. a local mock server.
+    pub fn train_base_url(mut self, url: Url) -> Self {
+        self.config.train_base = with_trailing_slash(url);
+        self
+    }
+
+    /// The HTTP client to send requests with.
+    pub fn http<H2>(self, http: H2) -> ClientBuilder<M, H2> {
+        ClientBuilder {
+            config: self.config,
+            http,
+            mode: PhantomData,
+        }
+    }
+}
 
 /// An async HTTP client that [`AsyncClient`] can send requests with.
 ///
@@ -28,7 +186,10 @@ use url::Url;
 ///     }
 /// }
 ///
-/// let client = cta::AsyncClient::with_http("key", Canned(r#"{"ctatt":{"errCd":"0"}}"#));
+/// let client = cta::AsyncClient::builder()
+///     .train_key("key")
+///     .http(Canned(r#"{"ctatt":{"errCd":"0"}}"#))
+///     .build();
 /// ```
 pub trait AsyncHttpClient {
     /// The error returned when a request fails.
@@ -41,46 +202,89 @@ pub trait AsyncHttpClient {
     fn get(&self, url: &Url) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send;
 }
 
-/// An async client for the CTA Train Tracker API.
-///
-/// Create one with [`new`](AsyncClient::new) (requires the `reqwest` feature) or
-/// [`with_http`](AsyncClient::with_http). Cloning is cheap when the HTTP client's is,
-/// as with `reqwest::Client`. The `Debug` output hides the API key.
-#[derive(Clone)]
-pub struct AsyncClient<H> {
-    base_url: Url,
-    key: String,
-    http: H,
-}
-
 impl<H> fmt::Debug for AsyncClient<H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AsyncClient")
-            .field("key", &"REDACTED")
-            .field("base_url", &self.base_url.as_str())
+            .field("config", &self.config)
             .finish_non_exhaustive()
     }
 }
 
+impl<H: AsyncHttpClient> ClientBuilder<Async, H> {
+    /// Create the client.
+    pub fn build(self) -> AsyncClient<H> {
+        AsyncClient {
+            config: self.config,
+            http: self.http,
+        }
+    }
+}
+
+#[cfg(feature = "reqwest")]
+impl ClientBuilder<Async, DefaultHttp> {
+    /// Create the client with a default `reqwest::Client`.
+    pub fn build(self) -> AsyncClient<reqwest::Client> {
+        self.http(reqwest::Client::new()).build()
+    }
+}
+
+/// An async client for the CTA APIs.
+///
+/// Create one with [`AsyncClient::builder`], then call an API through its view, such as
+/// [`trains`](AsyncClient::trains). Cloning is cheap when the HTTP client's is, as with
+/// `reqwest::Client`. The `Debug` output hides API keys.
+#[derive(Clone)]
+pub struct AsyncClient<H> {
+    config: Config,
+    http: H,
+}
+
+impl AsyncClient<()> {
+    /// Start building an async client.
+    pub fn builder() -> ClientBuilder<Async, DefaultHttp> {
+        ClientBuilder::new(DefaultHttp)
+    }
+}
+
+impl<H> AsyncClient<H> {
+    /// The Train Tracker API: arrivals, train locations, and following a train.
+    pub fn trains(&self) -> Trains<'_, H> {
+        Trains { client: self }
+    }
+}
+
 impl<H: AsyncHttpClient> AsyncClient<H> {
-    /// Predicted arrivals at the stations or stops in `query`.
+    async fn call<E: Endpoint>(&self, endpoint: E) -> Result<E::Output, Error<H::Error>> {
+        let req = endpoint
+            .request(&self.config)
+            .map_err(|api| Error::MissingKey { api })?;
+        let body = self.http.get(&req.url).await.map_err(Error::Http)?;
+        Ok(E::parse(&body)?)
+    }
+}
+
+/// The Train Tracker API on an [`AsyncClient`]. Created by [`AsyncClient::trains`].
+///
+/// Every method needs a train key; without one it returns [`Error::MissingKey`].
+pub struct Trains<'a, H> {
+    client: &'a AsyncClient<H>,
+}
+
+impl<H: AsyncHttpClient> Trains<'_, H> {
+    /// Predicted arrivals at a station or stop.
     ///
     /// ```no_run
     /// # #[cfg(feature = "reqwest")]
     /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
     /// use cta::trains::{ArrivalsQuery, Route, StationId};
     ///
-    /// let query = ArrivalsQuery::stations([StationId(40380), StationId(40360)])?
-    ///     .routes([Route::Blue, Route::Brown])
-    ///     .max(5)?;
-    /// let arrivals = client.arrivals(&query).await?;
+    /// let query = ArrivalsQuery::at(StationId(40380)).route(Route::Blue).max(5)?;
+    /// let arrivals = client.trains().arrivals(&query).await?;
     /// # Ok(())
     /// # }
     /// ```
     pub async fn arrivals(&self, query: &ArrivalsQuery) -> Result<Vec<Arrival>, Error<H::Error>> {
-        let req = arrivals_request(&self.base_url, &self.key, query);
-        let body = self.http.get(&req.url).await.map_err(Error::Http)?;
-        Ok(parse_arrivals(&body)?)
+        self.client.call(ArrivalsCall(query)).await
     }
 
     /// Every train currently in service on the lines in `query`.
@@ -88,9 +292,7 @@ impl<H: AsyncHttpClient> AsyncClient<H> {
         &self,
         query: &LocationsQuery,
     ) -> Result<Vec<TrainLocation>, Error<H::Error>> {
-        let req = locations_request(&self.base_url, &self.key, query);
-        let body = self.http.get(&req.url).await.map_err(Error::Http)?;
-        Ok(parse_locations(&body)?)
+        self.client.call(LocationsCall(query)).await
     }
 
     /// One train's position and its predicted arrival at each upcoming station.
@@ -100,42 +302,7 @@ impl<H: AsyncHttpClient> AsyncClient<H> {
     /// terminal, so a recent run number can return
     /// [`ApiErrorKind::RunNotFound`](crate::ApiErrorKind::RunNotFound).
     pub async fn follow(&self, run: &str) -> Result<FollowedTrain, Error<H::Error>> {
-        let req = follow_request(&self.base_url, &self.key, run);
-        let body = self.http.get(&req.url).await.map_err(Error::Http)?;
-        Ok(parse_follow(&body)?)
-    }
-
-    /// Create a client that sends requests with `http`.
-    ///
-    /// Use this to configure the HTTP client yourself (timeouts, proxies, user agent) or
-    /// to share one with the rest of your application.
-    pub fn with_http(key: impl Into<String>, http: H) -> Self {
-        Self {
-            key: key.into(),
-            base_url: Url::parse(DEFAULT_BASE_URL).expect("default base URL is valid"),
-            http,
-        }
-    }
-
-    /// Send requests to `url` instead of the CTA, for example a local mock server.
-    ///
-    /// A missing trailing `/` is added, so `http://localhost:8080/api/1.0` and
-    /// `http://localhost:8080/api/1.0/` behave the same.
-    pub fn base_url(mut self, mut url: Url) -> Self {
-        if !url.path().ends_with('/') {
-            let path = format!("{}/", url.path());
-            url.set_path(&path);
-        }
-        self.base_url = url;
-        self
-    }
-}
-
-#[cfg(feature = "reqwest")]
-impl AsyncClient<reqwest::Client> {
-    /// Create a client backed by a default `reqwest::Client`.
-    pub fn new(key: impl Into<String>) -> Self {
-        Self::with_http(key, reqwest::Client::new())
+        self.client.call(FollowCall(run)).await
     }
 }
 
@@ -172,68 +339,88 @@ pub trait BlockingHttpClient {
     fn get(&self, url: &Url) -> Result<Vec<u8>, Self::Error>;
 }
 
-/// A blocking client for the CTA Train Tracker API.
+/// A blocking client for the CTA APIs.
 ///
 /// The same API as [`AsyncClient`], without `async`. Create one with
-/// [`new`](BlockingClient::new) (requires the `ureq` feature) or
-/// [`with_http`](BlockingClient::with_http). The `Debug` output hides the API key.
+/// [`BlockingClient::builder`]. The `Debug` output hides API keys.
 #[derive(Clone)]
 pub struct BlockingClient<H> {
-    base_url: Url,
-    key: String,
+    config: Config,
     http: H,
+}
+
+impl BlockingClient<()> {
+    /// Start building a blocking client.
+    pub fn builder() -> ClientBuilder<Blocking, DefaultHttp> {
+        ClientBuilder::new(DefaultHttp)
+    }
+}
+
+impl<H> BlockingClient<H> {
+    /// The Train Tracker API: arrivals, train locations, and following a train.
+    pub fn trains(&self) -> BlockingTrains<'_, H> {
+        BlockingTrains { client: self }
+    }
+}
+
+impl<H: BlockingHttpClient> BlockingClient<H> {
+    fn call<E: Endpoint>(&self, endpoint: E) -> Result<E::Output, Error<H::Error>> {
+        let req = endpoint
+            .request(&self.config)
+            .map_err(|api| Error::MissingKey { api })?;
+        let body = self.http.get(&req.url).map_err(Error::Http)?;
+        Ok(E::parse(&body)?)
+    }
 }
 
 impl<H> fmt::Debug for BlockingClient<H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BlockingClient")
-            .field("key", &"REDACTED")
-            .field("base_url", &self.base_url.as_str())
+            .field("config", &self.config)
             .finish_non_exhaustive()
     }
 }
 
-impl<H: BlockingHttpClient> BlockingClient<H> {
+/// The Train Tracker API on a [`BlockingClient`]. Created by [`BlockingClient::trains`].
+///
+/// Every method needs a train key; without one it returns [`Error::MissingKey`].
+pub struct BlockingTrains<'a, H> {
+    client: &'a BlockingClient<H>,
+}
+
+impl<H: BlockingHttpClient> BlockingTrains<'_, H> {
     /// Predicted arrivals at the stations or stops in `query`.
     pub fn arrivals(&self, query: &ArrivalsQuery) -> Result<Vec<Arrival>, Error<H::Error>> {
-        let req = arrivals_request(&self.base_url, &self.key, query);
-        let body = self.http.get(&req.url).map_err(Error::Http)?;
-        Ok(parse_arrivals(&body)?)
+        self.client.call(ArrivalsCall(query))
     }
 
     /// Every train currently in service on the lines in `query`.
     pub fn locations(&self, query: &LocationsQuery) -> Result<Vec<TrainLocation>, Error<H::Error>> {
-        let req = locations_request(&self.base_url, &self.key, query);
-        let body = self.http.get(&req.url).map_err(Error::Http)?;
-        Ok(parse_locations(&body)?)
+        self.client.call(LocationsCall(query))
     }
 
     /// One train's position and its predicted arrival at each upcoming station.
     ///
-    /// See [`AsyncClient::follow`] for what `run` is and when it can fail.
+    /// See [`Trains::follow`] for what `run` is and when it can fail.
     pub fn follow(&self, run: &str) -> Result<FollowedTrain, Error<H::Error>> {
-        let req = follow_request(&self.base_url, &self.key, run);
-        let body = self.http.get(&req.url).map_err(Error::Http)?;
-        Ok(parse_follow(&body)?)
+        self.client.call(FollowCall(run))
     }
-
-    /// Create a client that sends requests with `http`.
-    pub fn with_http(key: impl Into<String>, http: H) -> Self {
-        Self {
-            key: key.into(),
-            base_url: Url::parse(DEFAULT_BASE_URL).expect("default base URL is valid"),
-            http,
+}
+impl<H: BlockingHttpClient> ClientBuilder<Blocking, H> {
+    /// Create the client.
+    pub fn build(self) -> BlockingClient<H> {
+        BlockingClient {
+            config: self.config,
+            http: self.http,
         }
     }
+}
 
-    /// Send requests to `url` instead of the CTA. See [`AsyncClient::base_url`].
-    pub fn base_url(mut self, mut url: Url) -> Self {
-        if !url.path().ends_with('/') {
-            let path = format!("{}/", url.path());
-            url.set_path(&path);
-        }
-        self.base_url = url;
-        self
+#[cfg(feature = "ureq")]
+impl ClientBuilder<Blocking, DefaultHttp> {
+    /// Create the client with a default `ureq::Agent`.
+    pub fn build(self) -> BlockingClient<ureq::Agent> {
+        self.http(ureq::Agent::new_with_defaults()).build()
     }
 }
 
@@ -246,13 +433,6 @@ impl BlockingHttpClient for ureq::Agent {
     }
 }
 
-#[cfg(feature = "ureq")]
-impl BlockingClient<ureq::Agent> {
-    /// Create a client backed by a default `ureq::Agent`.
-    pub fn new(key: impl Into<String>) -> Self {
-        Self::with_http(key, ureq::Agent::new_with_defaults())
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,6 +473,9 @@ mod tests {
             self.seen.lock().unwrap().push(url.clone());
             self.body.map(<[u8]>::to_vec).ok_or(Refused)
         }
+        fn requests(&self) -> usize {
+            self.seen.lock().unwrap().len()
+        }
         fn last_url(&self) -> Url {
             self.seen
                 .lock()
@@ -317,59 +500,88 @@ mod tests {
         }
     }
 
+    fn async_client(http: FakeHttp) -> AsyncClient<FakeHttp> {
+        AsyncClient::builder().train_key("k").http(http).build()
+    }
+
+    fn blocking_client(http: FakeHttp) -> BlockingClient<FakeHttp> {
+        BlockingClient::builder().train_key("k").http(http).build()
+    }
+
     // ---- AsyncClient ----
 
     #[tokio::test]
     async fn async_arrivals() {
         let http = FakeHttp::ok(ARRIVALS);
-        let client = AsyncClient::with_http("k", http.clone());
-        let arrivals = client
+        let arrivals = async_client(http.clone())
+            .trains()
             .arrivals(&ArrivalsQuery::at(StationId(40380)))
             .await
             .unwrap();
         assert_eq!(arrivals.len(), 3);
         assert_eq!(http.last_url().path(), "/api/1.0/ttarrivals.aspx");
+        assert!(http.last_url().query().unwrap().starts_with("key=k&"));
     }
 
     #[tokio::test]
     async fn async_locations_and_follow() {
-        let client = AsyncClient::with_http("k", FakeHttp::ok(LOCATIONS));
+        let client = async_client(FakeHttp::ok(LOCATIONS));
         let trains = client
+            .trains()
             .locations(&LocationsQuery::route(Route::Yellow))
             .await
             .unwrap();
         assert_eq!(trains.len(), 1);
 
-        let client = AsyncClient::with_http("k", FakeHttp::ok(FOLLOW));
-        assert_eq!(client.follow("125").await.unwrap().stops.len(), 3);
+        let client = async_client(FakeHttp::ok(FOLLOW));
+        assert_eq!(client.trains().follow("125").await.unwrap().stops.len(), 3);
     }
 
     #[tokio::test]
     async fn async_errors_map_to_variants() {
         let q = ArrivalsQuery::at(StationId(40380));
 
-        let client = AsyncClient::with_http("k", FakeHttp::failing());
+        let client = async_client(FakeHttp::failing());
         assert!(matches!(
-            client.arrivals(&q).await,
+            client.trains().arrivals(&q).await,
             Err(Error::Http(Refused))
         ));
 
-        let client = AsyncClient::with_http("k", FakeHttp::ok(BAD_KEY));
+        let client = async_client(FakeHttp::ok(BAD_KEY));
         assert!(matches!(
-            client.arrivals(&q).await,
+            client.trains().arrivals(&q).await,
             Err(Error::Api(e)) if e.kind() == ApiErrorKind::InvalidKey
         ));
 
-        let client = AsyncClient::with_http("k", FakeHttp::ok(b"<html>oops</html>"));
-        assert!(matches!(client.arrivals(&q).await, Err(Error::Decode(_))));
+        let client = async_client(FakeHttp::ok(b"<html>oops</html>"));
+        assert!(matches!(
+            client.trains().arrivals(&q).await,
+            Err(Error::Decode(_))
+        ));
     }
 
     #[tokio::test]
-    async fn async_base_url_override_adds_trailing_slash() {
+    async fn async_missing_key_sends_nothing() {
         let http = FakeHttp::ok(ARRIVALS);
-        let client = AsyncClient::with_http("k", http.clone())
-            .base_url(Url::parse("http://localhost:8080/api/1.0").unwrap());
+        let client = AsyncClient::builder().http(http.clone()).build();
+        let result = client
+            .trains()
+            .arrivals(&ArrivalsQuery::at(StationId(40380)))
+            .await;
+        assert!(matches!(result, Err(Error::MissingKey { api: Api::Train })));
+        assert_eq!(http.requests(), 0);
+    }
+
+    #[tokio::test]
+    async fn async_train_base_url_adds_trailing_slash() {
+        let http = FakeHttp::ok(ARRIVALS);
+        let client = AsyncClient::builder()
+            .train_key("k")
+            .train_base_url(Url::parse("http://localhost:8080/api/1.0").unwrap())
+            .http(http.clone())
+            .build();
         client
+            .trains()
             .arrivals(&ArrivalsQuery::at(StationId(40380)))
             .await
             .unwrap();
@@ -380,61 +592,90 @@ mod tests {
     }
 
     #[test]
-    fn async_debug_hides_key() {
-        let out = format!(
-            "{:?}",
-            AsyncClient::with_http("secret", FakeHttp::failing())
-        );
-        assert!(!out.contains("secret"), "{out}");
-        assert!(out.contains("REDACTED"));
+    fn debug_hides_key() {
+        let builder = AsyncClient::builder().train_key("secret");
+        let client = AsyncClient::builder()
+            .train_key("secret")
+            .http(FakeHttp::failing())
+            .build();
+        let blocking = BlockingClient::builder()
+            .train_key("secret")
+            .http(FakeHttp::failing())
+            .build();
+        for out in [
+            format!("{builder:?}"),
+            format!("{client:?}"),
+            format!("{blocking:?}"),
+        ] {
+            assert!(!out.contains("secret"), "{out}");
+            assert!(out.contains("REDACTED"), "{out}");
+        }
+    }
+
+    #[test]
+    fn debug_shows_missing_key_as_none() {
+        let client = AsyncClient::builder().http(FakeHttp::failing()).build();
+        assert!(format!("{client:?}").contains("train_key: None"));
+    }
+
+    #[cfg(feature = "reqwest")]
+    #[test]
+    fn async_default_http_is_reqwest() {
+        let _: AsyncClient<reqwest::Client> = AsyncClient::builder().train_key("k").build();
     }
 
     // ---- BlockingClient ----
 
     #[test]
     fn blocking_arrivals_locations_follow() {
-        let client = BlockingClient::with_http("k", FakeHttp::ok(ARRIVALS));
-        assert_eq!(
-            client
-                .arrivals(&ArrivalsQuery::at(StationId(40380)))
-                .unwrap()
-                .len(),
-            3
-        );
+        let client = blocking_client(FakeHttp::ok(ARRIVALS));
+        let q = ArrivalsQuery::at(StationId(40380));
+        assert_eq!(client.trains().arrivals(&q).unwrap().len(), 3);
 
-        let client = BlockingClient::with_http("k", FakeHttp::ok(LOCATIONS));
-        assert_eq!(
-            client
-                .locations(&LocationsQuery::route(Route::Yellow))
-                .unwrap()
-                .len(),
-            1
-        );
+        let client = blocking_client(FakeHttp::ok(LOCATIONS));
+        let q = LocationsQuery::route(Route::Yellow);
+        assert_eq!(client.trains().locations(&q).unwrap().len(), 1);
 
-        let client = BlockingClient::with_http("k", FakeHttp::ok(FOLLOW));
-        assert_eq!(client.follow("125").unwrap().stops.len(), 3);
+        let client = blocking_client(FakeHttp::ok(FOLLOW));
+        assert_eq!(client.trains().follow("125").unwrap().stops.len(), 3);
     }
 
     #[test]
     fn blocking_errors_map_to_variants() {
         let q = ArrivalsQuery::at(StationId(40380));
 
-        let client = BlockingClient::with_http("k", FakeHttp::failing());
-        assert!(matches!(client.arrivals(&q), Err(Error::Http(Refused))));
-
-        let client = BlockingClient::with_http("k", FakeHttp::ok(BAD_KEY));
+        let client = blocking_client(FakeHttp::failing());
         assert!(matches!(
-            client.arrivals(&q),
+            client.trains().arrivals(&q),
+            Err(Error::Http(Refused))
+        ));
+
+        let client = blocking_client(FakeHttp::ok(BAD_KEY));
+        assert!(matches!(
+            client.trains().arrivals(&q),
             Err(Error::Api(e)) if e.kind() == ApiErrorKind::InvalidKey
         ));
     }
 
     #[test]
-    fn blocking_base_url_override() {
+    fn blocking_missing_key_sends_nothing() {
         let http = FakeHttp::ok(ARRIVALS);
-        let client = BlockingClient::with_http("k", http.clone())
-            .base_url(Url::parse("http://localhost:8080/api/1.0/").unwrap());
+        let client = BlockingClient::builder().http(http.clone()).build();
+        let result = client.trains().follow("125");
+        assert!(matches!(result, Err(Error::MissingKey { api: Api::Train })));
+        assert_eq!(http.requests(), 0);
+    }
+
+    #[test]
+    fn blocking_train_base_url() {
+        let http = FakeHttp::ok(ARRIVALS);
+        let client = BlockingClient::builder()
+            .train_key("k")
+            .train_base_url(Url::parse("http://localhost:8080/api/1.0/").unwrap())
+            .http(http.clone())
+            .build();
         client
+            .trains()
             .arrivals(&ArrivalsQuery::at(StationId(40380)))
             .unwrap();
         assert_eq!(
@@ -443,13 +684,9 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ureq")]
     #[test]
-    fn blocking_debug_hides_key() {
-        let out = format!(
-            "{:?}",
-            BlockingClient::with_http("secret", FakeHttp::failing())
-        );
-        assert!(!out.contains("secret"), "{out}");
-        assert!(out.contains("REDACTED"));
+    fn blocking_default_http_is_ureq() {
+        let _: BlockingClient<ureq::Agent> = BlockingClient::builder().train_key("k").build();
     }
 }

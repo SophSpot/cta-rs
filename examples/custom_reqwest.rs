@@ -18,9 +18,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // `reqwest::Client` is cheap to clone and shares its connection pool,
     // so you can pass a clone here and keep using `http` elsewhere.
-    let client = AsyncClient::with_http(std::env::var("CTA_TRAIN_API_KEY")?, http.clone());
+    let client = AsyncClient::builder()
+        .train_key(std::env::var("CTA_TRAIN_API_KEY")?)
+        .http(http.clone())
+        .build();
 
     let arrivals = client
+        .trains()
         .arrivals(&ArrivalsQuery::at(StationId(40380)))
         .await?;
     println!("{} arrivals at Clark/Lake", arrivals.len());

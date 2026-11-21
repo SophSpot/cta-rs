@@ -14,10 +14,10 @@
 //! use cta::AsyncClient;
 //! use cta::trains::{ArrivalsQuery, StationId};
 //!
-//! let client = AsyncClient::new("your-api-key");
+//! let client = AsyncClient::builder().train_key("your-api-key").build();
 //!
 //! // Clark/Lake
-//! let arrivals = client.arrivals(&ArrivalsQuery::at(StationId(40380))).await?;
+//! let arrivals = client.trains().arrivals(&ArrivalsQuery::at(StationId(40380))).await?;
 //! for a in &arrivals {
 //!     println!("{} line to {} in {}", a.route, a.destination, a.eta());
 //! }
@@ -35,9 +35,9 @@
 //! use cta::BlockingClient;
 //! use cta::trains::{LocationsQuery, Route};
 //!
-//! let client = BlockingClient::new("your-api-key");
+//! let client = BlockingClient::builder().train_key("your-api-key").build();
 //!
-//! for train in client.locations(&LocationsQuery::route(Route::Red))? {
+//! for train in client.trains().locations(&LocationsQuery::route(Route::Red))? {
 //!     println!("run {} next stop {}", train.run, train.next_station);
 //! }
 //! # Ok(())
@@ -52,16 +52,23 @@
 //! | `locations` | Every train currently running on one or more lines ([`trains::TrainLocation`]) |
 //! | `follow` | One train's position and its upcoming stops ([`trains::FollowedTrain`]) |
 //!
-//! Each method exists on both [`AsyncClient`] and [`BlockingClient`].
+//! These are on [`AsyncClient::trains`] and [`BlockingClient::trains`].
+//!
+//! # Keys
+//!
+//! Each CTA API has its own key, set on the [`ClientBuilder`](client::ClientBuilder). A
+//! client without a key is valid: calling an API whose key isn't set returns
+//! [`Error::MissingKey`] without sending a request.
 //!
 //! # Features
 //!
-//! - `reqwest` (default): [`AsyncClient::new`], backed by [`reqwest`](https://docs.rs/reqwest).
-//! - `ureq`: [`BlockingClient::new`], backed by [`ureq`](https://docs.rs/ureq).
+//! - `reqwest` (default): the default HTTP client for [`AsyncClient`], backed by [`reqwest`](https://docs.rs/reqwest).
+//! - `ureq`: the default HTTP client for [`BlockingClient`], backed by [`ureq`](https://docs.rs/ureq).
 //! - `serde`: `Serialize`/`Deserialize` for the response types, for caching or forwarding them.
 //!
 //! Both HTTP clients use rustls for TLS. To use a different HTTP client, implement
-//! [`AsyncHttpClient`] or [`BlockingHttpClient`] and pass it to `with_http`.
+//! [`AsyncHttpClient`] or [`BlockingHttpClient`] and pass it to
+//! [`ClientBuilder::http`](client::ClientBuilder::http).
 //!
 //! # Without an HTTP client
 //!
@@ -84,8 +91,25 @@ pub use client::{AsyncClient, AsyncHttpClient, BlockingClient, BlockingHttpClien
 /// Re-export of [`jiff`], the date and time library used in this crate's public types.
 pub use jiff;
 use jiff::tz::TimeZone;
-/// Re-export of [`url::Url`], used by [`AsyncHttpClient`], [`BlockingHttpClient`], and `base_url`.
+use std::fmt::Formatter;
+/// Re-export of [`url::Url`], used by [`AsyncHttpClient`], [`BlockingHttpClient`], and the builder's base URLs.
 pub use url::Url;
+
+/// A CTA API the client can call, used to say which key is missing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Api {
+    /// The Train Tracker API: arrivals, locations, and follow.
+    Train,
+}
+
+impl std::fmt::Display for Api {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Api::Train => "Train Tracker",
+        })
+    }
+}
 
 /// An error reported by the CTA API itself.
 ///
@@ -120,6 +144,9 @@ pub enum ApiErrorKind {
     /// The `max` value is not valid (110).
     InvalidMax,
     /// A required parameter was missing from the request (100).
+    ///
+    /// This is the CTA's error. The client-side error for a key that was never
+    /// configured is [`Error::MissingKey`].
     MissingParameter,
     /// No train with this run number is in service (501).
     ///
@@ -216,7 +243,7 @@ pub enum ResponseError {
 /// # async fn run(client: cta::AsyncClient<reqwest::Client>) {
 /// use cta::{ApiErrorKind, Error};
 ///
-/// match client.follow("123").await {
+/// match client.trains().follow("123").await {
 ///     Ok(train) => println!("{} stops left", train.stops.len()),
 ///     Err(Error::Api(e)) if e.kind() == ApiErrorKind::RunNotFound => println!("run ended"),
 ///     Err(e) => eprintln!("{e}"),
@@ -224,7 +251,17 @@ pub enum ResponseError {
 /// # }
 /// ```
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error<E> {
+    /// The client has no key for the API this method calls.
+    ///
+    /// No request was sent. Set the key on the builder, e.g. with
+    /// [`ClientBuilder::train_key`](client::ClientBuilder::train_key).
+    #[error("no API key set for {api}")]
+    MissingKey {
+        /// The API whose key is missing.
+        api: Api,
+    },
     /// The HTTP request failed: connection error, timeout, or a non-success status.
     #[error("HTTP request failed")]
     Http(#[source] E),
@@ -242,6 +279,37 @@ impl<E> From<ResponseError> for Error<E> {
             ResponseError::Api(e) => Error::Api(e),
             ResponseError::Decode(e) => Error::Decode(e),
         }
+    }
+}
+
+/// A request to send to the CTA, built by functions like [`trains::arrivals_request`].
+///
+/// The `Debug` output hides the API key.
+#[derive(Clone, PartialEq)]
+pub struct Request {
+    /// The full URL to GET, including the API key.
+    pub url: Url,
+}
+
+impl std::fmt::Debug for Request {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut url = self.url.clone();
+        let pairs: Vec<(String, String)> = self
+            .url
+            .query_pairs()
+            .map(|(k, v)| {
+                let v = if k == "key" {
+                    "REDACTED".into()
+                } else {
+                    v.into_owned()
+                };
+                (k.into_owned(), v)
+            })
+            .collect();
+        url.query_pairs_mut().clear().extend_pairs(pairs);
+        f.debug_struct("Request")
+            .field("url", &url.as_str())
+            .finish()
     }
 }
 

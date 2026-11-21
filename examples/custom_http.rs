@@ -45,9 +45,13 @@ const RESPONSE: &str = r#"{"ctatt":{"errCd":"0","errNm":null,"eta":[{"staId":"40
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // To wrap a client from another crate, put it in your own struct like `Logged`:
     // Rust doesn't let you implement this crate's trait directly on another crate's type.
-    let client = AsyncClient::with_http("not-a-real-key", Logged(Canned(RESPONSE)));
+    let client = AsyncClient::builder()
+        .train_key("not-a-real-key")
+        .http(Logged(Canned(RESPONSE)))
+        .build();
 
     for a in client
+        .trains()
         .arrivals(&ArrivalsQuery::at(StationId(40380)))
         .await?
     {

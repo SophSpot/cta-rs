@@ -6,7 +6,7 @@
 //! build the URL and parse the response body without doing any I/O.
 //!
 //! ```
-//! use cta::Url;
+//! use cta::{Request, Url};
 //! use cta::trains::{ArrivalsQuery, DEFAULT_BASE_URL, StationId, arrivals_request, parse_arrivals};
 //!
 //! let base = Url::parse(DEFAULT_BASE_URL)?;
@@ -23,17 +23,15 @@ mod locations;
 
 use crate::deserializers::from_str;
 use crate::{ApiError, DecodeError, ResponseError};
-use serde::Deserialize;
-use serde::de::DeserializeOwned;
-use std::fmt::{Display, Formatter};
-use std::str::FromStr;
-use url::Url;
-
 pub use arrivals::{
     Arrival, ArrivalsQuery, Location, QueryError, arrivals_request, parse_arrivals,
 };
 pub use follow::{FollowedTrain, follow_request, parse_follow};
 pub use locations::{LocationsQuery, TrainLocation, locations_request, parse_locations};
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
 /// The Train Tracker API's base URL. The clients use this unless given another with `base_url`.
 pub const DEFAULT_BASE_URL: &str = "https://lapi.transitchicago.com/api/1.0/";
@@ -178,37 +176,6 @@ pub struct Position {
     pub heading: u16,
 }
 
-/// A request to send to the CTA, built by functions like [`arrivals_request`].
-///
-/// The `Debug` output hides the API key.
-#[derive(Clone, PartialEq)]
-pub struct Request {
-    /// The full URL to GET, including the API key.
-    pub url: Url,
-}
-
-impl std::fmt::Debug for Request {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut url = self.url.clone();
-        let pairs: Vec<(String, String)> = self
-            .url
-            .query_pairs()
-            .map(|(k, v)| {
-                let v = if k == "key" {
-                    "REDACTED".into()
-                } else {
-                    v.into_owned()
-                };
-                (k.into_owned(), v)
-            })
-            .collect();
-        url.query_pairs_mut().clear().extend_pairs(pairs);
-        f.debug_struct("Request")
-            .field("url", &url.as_str())
-            .finish()
-    }
-}
-
 #[derive(Deserialize)]
 struct RawEnvelope<T> {
     #[serde(rename = "errCd", deserialize_with = "from_str")]
@@ -252,7 +219,7 @@ pub(super) fn position(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ApiErrorKind;
+    use crate::{ApiErrorKind, Request};
 
     #[test]
     fn route_parses_codes_names_and_line_suffix() {
@@ -301,7 +268,7 @@ mod tests {
 
     #[test]
     fn request_debug_hides_key() {
-        let url = Url::parse("https://example.com/x?key=secret&mapid=40380").unwrap();
+        let url = url::Url::parse("https://example.com/x?key=secret&mapid=40380").unwrap();
         let out = format!("{:?}", Request { url });
         assert!(!out.contains("secret"), "{out}");
         assert!(out.contains("REDACTED"));

@@ -31,8 +31,8 @@ cargo add cta --no-default-features --features ureq
 
 | Feature | Default | What it enables |
 |---|---|---|
-| `reqwest` | yes | `AsyncClient::new`, backed by [reqwest](https://docs.rs/reqwest) |
-| `ureq` | no | `BlockingClient::new`, backed by [ureq](https://docs.rs/ureq) |
+| `reqwest` | yes | The default HTTP client for `AsyncClient`, backed by [reqwest](https://docs.rs/reqwest) |
+| `ureq` | no | The default HTTP client for `BlockingClient`, backed by [ureq](https://docs.rs/ureq) |
 | `serde` | no | `Serialize`/`Deserialize` for the response types, for caching or forwarding them |
 
 Both HTTP clients use rustls for TLS.
@@ -47,10 +47,12 @@ use cta::trains::{ArrivalsQuery, StationId};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = AsyncClient::new(std::env::var("CTA_TRAIN_API_KEY")?);
+    let client = AsyncClient::builder()
+        .train_key(std::env::var("CTA_TRAIN_API_KEY")?)
+        .build();
 
     // Clark/Lake
-    let arrivals = client.arrivals(&ArrivalsQuery::at(StationId(40380))).await?;
+    let arrivals = client.trains().arrivals(&ArrivalsQuery::at(StationId(40380))).await?;
     for a in &arrivals {
         println!("{} Line to {} in {} min", a.route, a.destination, a.eta().as_mins());
     }
@@ -65,18 +67,25 @@ use cta::BlockingClient;
 use cta::trains::{LocationsQuery, Route};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = BlockingClient::new(std::env::var("CTA_TRAIN_API_KEY")?);
+    let client = BlockingClient::builder()
+        .train_key(std::env::var("CTA_TRAIN_API_KEY")?)
+        .build();
 
-    for train in client.locations(&LocationsQuery::route(Route::Red))? {
+    for train in client.trains().locations(&LocationsQuery::route(Route::Red))? {
         println!("run {} to {}, next stop {}", train.run, train.destination, train.next_station);
     }
     Ok(())
 }
 ```
 
+## Keys
+
+Each CTA API has its own key, set on the builder. A client without a key is valid:
+calling an API whose key isn't set returns `Error::MissingKey` without sending a request.
+
 ## Endpoints
 
-Each method exists on both `AsyncClient` and `BlockingClient`.
+Train Tracker methods are on `client.trains()`, for both `AsyncClient` and `BlockingClient`.
 
 | Method | Query | Returns |
 |---|---|---|
@@ -111,7 +120,7 @@ Client methods return `cta::Error<E>`, where `E` is the HTTP client's error type
 ```rust
 use cta::{ApiErrorKind, Error};
 
-match client.follow(&run).await {
+match client.trains().follow(&run).await {
     Ok(train) => println!("{} stops left", train.stops.len()),
     Err(Error::Api(e)) if e.kind() == ApiErrorKind::RunNotFound => println!("that run has ended"),
     Err(Error::Api(e)) if e.kind() == ApiErrorKind::InvalidKey => eprintln!("check your API key"),
@@ -119,6 +128,7 @@ match client.follow(&run).await {
 }
 ```
 
+- `Error::MissingKey`: the client has no key for that API. Nothing was sent.
 - `Error::Http`: the request failed (connection, timeout, or HTTP status).
 - `Error::Api`: the CTA returned an error code. `kind()` names the common ones, and `code` and `message` are always available.
 - `Error::Decode`: the response couldn't be read.
@@ -131,13 +141,13 @@ The CTA reports Chicago local time without an offset. This crate attaches the `A
 
 ## Custom HTTP clients
 
-Pass a configured `reqwest::Client` (timeouts, proxies, a shared connection pool) with `with_http`:
+Pass a configured `reqwest::Client` (timeouts, proxies, a shared connection pool) to the builder:
 
 ```rust
 let http = reqwest::Client::builder()
     .timeout(std::time::Duration::from_secs(5))
     .build()?;
-let client = cta::AsyncClient::with_http(key, http);
+let client = cta::AsyncClient::builder().train_key(key).http(http).build();
 ```
 
 To use another HTTP library, or to add logging, retries, or canned responses for tests, implement `AsyncHttpClient` or `BlockingHttpClient`:
@@ -157,7 +167,8 @@ impl AsyncHttpClient for MyHttp {
 }
 ```
 
-The request URL contains your API key, and the clients' `Debug` output hides it.
+Then pass it with `.http(MyHttp(..))`. The request URL contains your API key, and the
+clients' `Debug` output hides it.
 
 ### Without an HTTP client
 

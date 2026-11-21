@@ -22,8 +22,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         LocationsQuery::routes(routes)
     };
 
-    let client = AsyncClient::new(key);
-    let trains = client.locations(&query).await?;
+    let client = AsyncClient::builder().train_key(key).build();
+    let trains = client.trains().locations(&query).await?;
 
     for route in Route::ALL {
         let on_line: Vec<_> = trains.iter().filter(|t| t.route == route).collect();
