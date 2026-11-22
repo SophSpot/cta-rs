@@ -196,11 +196,7 @@ pub(super) fn parse_envelope<T: DeserializeOwned>(body: &[u8]) -> Result<T, Resp
         .map_err(DecodeError::from)?
         .ctatt;
     if env.err_cd != 0 {
-        return Err(ApiError {
-            code: env.err_cd,
-            message: env.err_nm.unwrap_or_default(),
-        }
-        .into());
+        return Err(ApiError::train(env.err_cd, env.err_nm.unwrap_or_default()).into());
     }
     Ok(env.body)
 }
@@ -283,7 +279,8 @@ mod tests {
         let body = br#"{"ctatt":{"errCd":"101","errNm":"Invalid API key"}}"#;
         match parse_envelope::<Empty>(body) {
             Err(ResponseError::Api(e)) => {
-                assert_eq!(e.code, 101);
+                assert_eq!(e.api, crate::Api::Train);
+                assert_eq!(e.code, Some(101));
                 assert_eq!(e.kind(), ApiErrorKind::InvalidKey);
                 assert_eq!(e.message, "Invalid API key");
             }

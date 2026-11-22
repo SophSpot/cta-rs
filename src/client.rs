@@ -1,11 +1,12 @@
 //! Async and blocking clients, and the traits for plugging in an HTTP client.
 
 use crate::trains::{
-    Arrival, ArrivalsQuery, DEFAULT_BASE_URL, FollowedTrain, LocationsQuery, TrainLocation,
+    Arrival, ArrivalsQuery, FollowedTrain, LocationsQuery, TrainLocation,
     arrivals_request, follow_request, locations_request, parse_arrivals, parse_follow,
     parse_locations,
 };
-use crate::{Api, Error, Request, ResponseError};
+use crate::{Api, Error, Request, ResponseError, buses, trains};
+use jiff::ZonedDateTime;
 use std::fmt;
 use std::marker::PhantomData;
 use url::Url;
@@ -14,12 +15,16 @@ use url::Url;
 struct Config {
     train_key: Option<String>,
     train_base: Url,
+    bus_key: Option<String>,
+    bus_base: Url,
 }
 impl Default for Config {
     fn default() -> Self {
         Self {
             train_key: None,
-            train_base: Url::parse(DEFAULT_BASE_URL).expect("default base URL is valid"),
+            train_base: Url::parse(trains::DEFAULT_BASE_URL).expect("default base URL is valid"),
+            bus_key: None,
+            bus_base: Url::parse(buses::DEFAULT_BASE_URL).expect("default base URL is valid"),
         }
     }
 }
@@ -30,6 +35,12 @@ impl Config {
         let key = self.train_key.as_deref().ok_or(Api::Train)?;
         Ok((&self.train_base, key))
     }
+
+    /// The Bus Tracker base URL and key, or which key is missing.
+    fn bus(&self) -> Result<(&Url, &str), Api> {
+        let key = self.bus_key.as_deref().ok_or(Api::Bus)?;
+        Ok((&self.bus_base, key))
+    }
 }
 
 impl fmt::Debug for Config {
@@ -37,6 +48,8 @@ impl fmt::Debug for Config {
         f.debug_struct("Config")
             .field("train_key", &self.train_key.as_ref().map(|_| "REDACTED"))
             .field("train_base_url", &self.train_base.as_str())
+            .field("bus_key", &self.bus_key.as_ref().map(|_| "REDACTED"))
+            .field("bus_base_url", &self.bus_base.as_str())
             .finish()
     }
 }
@@ -59,6 +72,7 @@ trait Endpoint {
 struct ArrivalsCall<'a>(&'a ArrivalsQuery);
 struct LocationsCall<'a>(&'a LocationsQuery);
 struct FollowCall<'a>(&'a str);
+struct TimeCall;
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -90,6 +104,17 @@ impl Endpoint for FollowCall<'_> {
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         parse_follow(body)
+    }
+}
+
+impl Endpoint for TimeCall {
+    type Output = ZonedDateTime;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::time_request(base, key))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_time(body)
     }
 }
 
@@ -154,6 +179,19 @@ impl<M, H> ClientBuilder<M, H> {
     /// Send Train Tracker requests to `url` instead of the CTA, e.g. a local mock server.
     pub fn train_base_url(mut self, url: Url) -> Self {
         self.config.train_base = with_trailing_slash(url);
+        self
+    }
+
+    /// The Bus Tracker API key, used by [`AsyncClient::buses`] and
+    /// [`BlockingClient::buses`].
+    pub fn bus_key(mut self, key: impl Into<String>) -> Self {
+        self.config.bus_key = Some(key.into());
+        self
+    }
+
+    /// Send Bus Tracker requests to `url` instead of the CTA, e.g. a local mock server.
+    pub fn bus_base_url(mut self, url: Url) -> Self {
+        self.config.bus_base = with_trailing_slash(url);
         self
     }
 
@@ -251,6 +289,11 @@ impl<H> AsyncClient<H> {
     pub fn trains(&self) -> Trains<'_, H> {
         Trains { client: self }
     }
+
+    /// The Bus Tracker API.
+    pub fn buses(&self) -> Buses<'_, H> {
+        Buses { client: self }
+    }
 }
 
 impl<H: AsyncHttpClient> AsyncClient<H> {
@@ -303,6 +346,32 @@ impl<H: AsyncHttpClient> Trains<'_, H> {
     /// [`ApiErrorKind::RunNotFound`](crate::ApiErrorKind::RunNotFound).
     pub async fn follow(&self, run: &str) -> Result<FollowedTrain, Error<H::Error>> {
         self.client.call(FollowCall(run)).await
+    }
+}
+
+/// The Bus Tracker API on an [`AsyncClient`]. Created by [`AsyncClient::buses`].
+///
+/// Every method needs a bus key; without one it returns [`Error::MissingKey`].
+pub struct Buses<'a, H> {
+    client: &'a AsyncClient<H>,
+}
+
+impl<H: AsyncHttpClient> Buses<'_, H> {
+    /// Bus Tracker's current time, in Chicago.
+    ///
+    /// Predictions and vehicle positions are timestamped by this clock, so use it rather
+    /// than the local clock when comparing against them.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// let now = client.buses().time().await?;
+    /// println!("Bus Tracker time: {now}");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn time(&self) -> Result<ZonedDateTime, Error<H::Error>> {
+        self.client.call(TimeCall).await
     }
 }
 
@@ -361,6 +430,11 @@ impl<H> BlockingClient<H> {
     pub fn trains(&self) -> BlockingTrains<'_, H> {
         BlockingTrains { client: self }
     }
+
+    /// The Bus Tracker API
+    pub fn buses(&self) -> BlockingBuses<'_, H> {
+        BlockingBuses { client: self }
+    }
 }
 
 impl<H: BlockingHttpClient> BlockingClient<H> {
@@ -406,6 +480,23 @@ impl<H: BlockingHttpClient> BlockingTrains<'_, H> {
         self.client.call(FollowCall(run))
     }
 }
+
+/// The Bus Tracker API on a [`BlockingClient`]. Created by [`BlockingClient::buses`].
+///
+/// Every method needs a bus key; without one it returns [`Error::MissingKey`].
+pub struct BlockingBuses<'a, H> {
+    client: &'a BlockingClient<H>,
+}
+
+impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
+    /// Bus Tracker's current time, in Chicago.
+    ///
+    /// See [`Buses::time`].
+    pub fn time(&self) -> Result<ZonedDateTime, Error<H::Error>> {
+        self.client.call(TimeCall)
+    }
+}
+
 impl<H: BlockingHttpClient> ClientBuilder<Blocking, H> {
     /// Create the client.
     pub fn build(self) -> BlockingClient<H> {
@@ -444,6 +535,8 @@ mod tests {
     const LOCATIONS: &[u8] = include_bytes!("../tests/fixtures/locations_yellow.json");
     const FOLLOW: &[u8] = include_bytes!("../tests/fixtures/follow_125.json");
     const BAD_KEY: &[u8] = br#"{"ctatt":{"errCd":"101","errNm":"Invalid API key"}}"#;
+    const BUS_TIME: &[u8] = include_bytes!("../tests/fixtures/bus_time.json");
+    const BUS_BAD_KEY: &[u8] = include_bytes!("../tests/fixtures/bus_bad_key.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -593,13 +686,17 @@ mod tests {
 
     #[test]
     fn debug_hides_key() {
-        let builder = AsyncClient::builder().train_key("secret");
+        let builder = AsyncClient::builder()
+            .train_key("secret")
+            .bus_key("secret2");
         let client = AsyncClient::builder()
             .train_key("secret")
+            .bus_key("secret2")
             .http(FakeHttp::failing())
             .build();
         let blocking = BlockingClient::builder()
             .train_key("secret")
+            .bus_key("secret2")
             .http(FakeHttp::failing())
             .build();
         for out in [
@@ -608,6 +705,7 @@ mod tests {
             format!("{blocking:?}"),
         ] {
             assert!(!out.contains("secret"), "{out}");
+            assert!(!out.contains("secret2"), "{out}");
             assert!(out.contains("REDACTED"), "{out}");
         }
     }
@@ -615,13 +713,89 @@ mod tests {
     #[test]
     fn debug_shows_missing_key_as_none() {
         let client = AsyncClient::builder().http(FakeHttp::failing()).build();
-        assert!(format!("{client:?}").contains("train_key: None"));
+        let out = format!("{client:?}");
+        assert!(out.contains("train_key: None"), "{out}");
+        assert!(out.contains("bus_key: None"), "{out}");
+    }
+
+    #[test]
+    fn bus_config_defaults_and_overrides() {
+        let config = Config::default();
+        assert_eq!(config.bus_base.as_str(), buses::DEFAULT_BASE_URL);
+        assert_eq!(config.bus(), Err(Api::Bus));
+
+        let builder = AsyncClient::builder()
+            .bus_key("k")
+            .bus_base_url(Url::parse("http://localhost:8080/bustime/api/v3").unwrap());
+        assert_eq!(
+            builder.config.bus_base.as_str(),
+            "http://localhost:8080/bustime/api/v3/"
+        );
+        let (base, key) = builder.config.bus().unwrap();
+        assert_eq!(key, "k");
+        assert_eq!(base.as_str(), "http://localhost:8080/bustime/api/v3/");
     }
 
     #[cfg(feature = "reqwest")]
     #[test]
     fn async_default_http_is_reqwest() {
         let _: AsyncClient<reqwest::Client> = AsyncClient::builder().train_key("k").build();
+    }
+
+    fn async_bus_client(http: FakeHttp) -> AsyncClient<FakeHttp> {
+        AsyncClient::builder().bus_key("k").http(http).build()
+    }
+
+    fn blocking_bus_client(http: FakeHttp) -> BlockingClient<FakeHttp> {
+        BlockingClient::builder().bus_key("k").http(http).build()
+    }
+
+    #[tokio::test]
+    async fn async_bus_time() {
+        let http = FakeHttp::ok(BUS_TIME);
+        let tm = async_bus_client(http.clone()).buses().time().await.unwrap();
+        assert_eq!(tm.hour(), 10);
+        let url = http.last_url();
+        assert_eq!(url.host_str(), Some("www.ctabustracker.com"));
+        assert_eq!(url.path(), "/bustime/api/v3/gettime");
+        assert!(url.query().unwrap().starts_with("key=k&"));
+    }
+
+    #[tokio::test]
+    async fn async_bus_bad_key() {
+        let client = async_bus_client(FakeHttp::ok(BUS_BAD_KEY));
+        assert!(matches!(
+            client.buses().time().await,
+            Err(Error::Api(e)) if e.api == Api::Bus && e.kind() == ApiErrorKind::InvalidKey
+        ));
+    }
+
+    #[tokio::test]
+    async fn async_bus_missing_key_sends_nothing() {
+        // A train key doesn't count as a bus key.
+        let http = FakeHttp::ok(BUS_TIME);
+        let client = AsyncClient::builder()
+            .train_key("k")
+            .http(http.clone())
+            .build();
+        let result = client.buses().time().await;
+        assert!(matches!(result, Err(Error::MissingKey { api: Api::Bus })));
+        assert_eq!(http.requests(), 0);
+    }
+
+    #[tokio::test]
+    async fn async_bus_base_url() {
+        let http = FakeHttp::ok(BUS_TIME);
+        let client = AsyncClient::builder()
+            .bus_key("k")
+            .bus_base_url(Url::parse("http://localhost:8080/bustime/api/v3").unwrap())
+            .http(http.clone())
+            .build();
+        client.buses().time().await.unwrap();
+        assert_eq!(
+            http.last_url().as_str().split('?').next(),
+            Some("http://localhost:8080/bustime/api/v3/gettime")
+        );
     }
 
     // ---- BlockingClient ----
@@ -655,6 +829,29 @@ mod tests {
             client.trains().arrivals(&q),
             Err(Error::Api(e)) if e.kind() == ApiErrorKind::InvalidKey
         ));
+    }
+
+    #[test]
+    fn blocking_bus_time_and_errors() {
+        let client = blocking_bus_client(FakeHttp::ok(BUS_TIME));
+        assert_eq!(client.buses().time().unwrap().minute(), 16);
+
+        let client = blocking_bus_client(FakeHttp::ok(BUS_BAD_KEY));
+        assert!(matches!(
+            client.buses().time(),
+            Err(Error::Api(e)) if e.kind() == ApiErrorKind::InvalidKey
+        ));
+
+        let client = blocking_bus_client(FakeHttp::failing());
+        assert!(matches!(client.buses().time(), Err(Error::Http(Refused))));
+
+        let http = FakeHttp::ok(BUS_TIME);
+        let client = BlockingClient::builder().http(http.clone()).build();
+        assert!(matches!(
+            client.buses().time(),
+            Err(Error::MissingKey { api: Api::Bus })
+        ));
+        assert_eq!(http.requests(), 0);
     }
 
     #[test]
