@@ -13,15 +13,18 @@ mod locales;
 mod routes;
 mod stops;
 mod time;
+mod vehicles;
 
 pub use directions::{DirectionInfo, DirectionsQuery, directions_request, parse_directions};
 pub use locales::{LocaleInfo, LocalesQuery, locales_request, parse_locales};
 pub use routes::{RouteInfo, RoutesQuery, parse_routes, routes_request};
 pub use stops::{Stop, StopsQuery, parse_stops, stops_request};
 pub use time::{parse_time, time_request};
+pub use vehicles::{Vehicle, VehiclesQuery, parse_vehicles, vehicles_request};
 
 use crate::deserializers::one_or_many;
 use crate::{ApiError, DecodeError, ResponseError};
+use jiff::{SignedDuration, ZonedDateTime, civil, tz::TimeZone};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
@@ -250,6 +253,80 @@ impl Display for StopId {
     }
 }
 
+/// A bus's ID (`vid`): the fleet number painted on the bus, such as `8932`.
+///
+/// ```
+/// use cta::buses::VehicleId;
+///
+/// assert_eq!(VehicleId(8932).to_string(), "8932");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct VehicleId(pub u32);
+
+impl Display for VehicleId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+/// A pattern's ID (`pid`): one specific path a route takes, such as a short-turn or a
+/// detour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PatternId(pub u32);
+
+impl Display for PatternId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+/// How full a bus is, as reported by Bus Tracker.
+///
+/// CTA doesn't report crowding today, so this is always [`Unknown`](Self::Unknown).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum PassengerLoad {
+    /// The bus is nearly empty.
+    Empty,
+    /// The bus is about half full.
+    HalfEmpty,
+    /// The bus is full.
+    Full,
+    /// Bus Tracker doesn't know, or didn't say.
+    Unknown,
+}
+
+impl PassengerLoad {
+    /// Bus Tracker's `psgld` value: `"EMPTY"`, `"HALF_EMPTY"`, `"FULL"`, `"N/A"`, or `""`.
+    /// Anything unrecognized is `Unknown`.
+    fn from_cta(s: &str) -> Self {
+        match s.trim().to_ascii_uppercase().as_str() {
+            "EMPTY" => PassengerLoad::Empty,
+            "HALF_EMPTY" => PassengerLoad::HalfEmpty,
+            "FULL" => PassengerLoad::Full,
+            _ => PassengerLoad::Unknown,
+        }
+    }
+}
+
+/// A trip's scheduled start: `seconds` after the start of `date`'s service day.
+///
+/// Transit schedules measure from noon minus 12 hours (midnight, except on days the
+/// clocks change) and can run past 24 hours for trips after midnight, so the seconds
+/// are added as elapsed time rather than read as a clock time.
+fn scheduled_start(
+    date: civil::Date,
+    seconds: u32,
+    tz: &TimeZone,
+) -> Result<ZonedDateTime, DecodeError> {
+    let noon = date.at(12, 0, 0, 0).to_zoned_datetime(tz.clone())?;
+    let offset = SignedDuration::from_secs(i64::from(seconds)) - SignedDuration::from_hours(12);
+    Ok(noon.checked_add(offset)?)
+}
+
 /// A detour's ID, such as `"8A3D8B0D-D95E-4621-BAF8-E969867256B5"`.
 ///
 /// Stops list the detours that add or remove them, and the same ID identifies the
@@ -302,6 +379,18 @@ pub enum QueryError {
     /// More stop IDs than Bus Tracker accepts in one request.
     #[error("too many stops: {0} (Bus Tracker accepts at most 10)")]
     TooManyStops(usize),
+    /// A vehicles query was given no vehicle IDs.
+    #[error("a vehicles query needs at least one vehicle ID")]
+    NoVehicles,
+    /// More vehicle IDs than Bus Tracker accepts in one request.
+    #[error("too many vehicles: {0} (Bus Tracker accepts at most 10)")]
+    TooManyVehicles(usize),
+    /// A query was given an empty list of routes.
+    #[error("a query by route needs at least one route")]
+    NoRoutes,
+    /// More routes than Bus Tracker accepts in one request.
+    #[error("too many routes: {0} (Bus Tracker accepts at most 10)")]
+    TooManyRoutes(usize),
 }
 
 /// Remove duplicates, keeping the first occurrence.
@@ -453,6 +542,53 @@ mod tests {
         assert_eq!(DetourId::from(id).as_str(), id);
         assert_eq!(DetourId::from(id).to_string(), id);
         assert_eq!(DetourId::from(id), DetourId::new(String::from(id)));
+    }
+
+    #[test]
+    fn passenger_load_from_cta() {
+        assert_eq!(PassengerLoad::from_cta("EMPTY"), PassengerLoad::Empty);
+        assert_eq!(
+            PassengerLoad::from_cta("HALF_EMPTY"),
+            PassengerLoad::HalfEmpty
+        );
+        assert_eq!(PassengerLoad::from_cta("full"), PassengerLoad::Full);
+        for s in ["N/A", "", "  ", "CRUSHED"] {
+            assert_eq!(PassengerLoad::from_cta(s), PassengerLoad::Unknown, "{s:?}");
+        }
+    }
+
+    fn chicago_time(date: civil::Date, h: i8, m: i8, s: i8) -> ZonedDateTime {
+        date.at(h, m, s, 0)
+            .to_zoned_datetime(crate::chicago().unwrap())
+            .unwrap()
+    }
+
+    #[test]
+    fn scheduled_start_adds_seconds_to_the_service_day() {
+        let tz = crate::chicago().unwrap();
+        let day = civil::date(2026, 11, 22);
+        assert_eq!(
+            scheduled_start(day, 45810, &tz).unwrap(),
+            chicago_time(day, 12, 43, 30)
+        );
+        // Trips after midnight belong to the previous service day.
+        assert_eq!(
+            scheduled_start(day, 25 * 3600, &tz).unwrap(),
+            chicago_time(civil::date(2026, 11, 23), 1, 0, 0)
+        );
+    }
+
+    #[test]
+    fn scheduled_start_on_clock_change_days() {
+        // Measured from noon minus 12 hours, so daytime trips keep their clock times.
+        let tz = crate::chicago().unwrap();
+        for day in [civil::date(2026, 3, 8), civil::date(2026, 11, 1)] {
+            assert_eq!(
+                scheduled_start(day, 10 * 3600, &tz).unwrap(),
+                chicago_time(day, 10, 0, 0),
+                "{day}"
+            );
+        }
     }
 
     #[test]

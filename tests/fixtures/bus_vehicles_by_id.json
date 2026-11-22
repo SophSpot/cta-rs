@@ -1,0 +1,52 @@
+{
+	"bustime-response": {
+		"vehicle": [
+			{
+				"vid": "8932",
+				"tmstmp": "20261122 12:38:33",
+				"lat": "41.72074890136719",
+				"lon": "-87.62371826171875",
+				"hdg": "0",
+				"pid": 18414,
+				"rt": "3",
+				"des": "Michigan/Chicago",
+				"pdist": 0,
+				"dly": false,
+				"tatripid": "10001296",
+				"origtatripno": "280451146",
+				"tablockid": "3 -712",
+				"zone": "",
+				"mode": 1,
+				"psgld": "N/A",
+				"stst": 45810,
+				"stsd": "2026-11-22"
+			},
+			{
+				"vid": "7962",
+				"tmstmp": "20261122 12:38:25",
+				"lat": "41.739906311035156",
+				"lon": "-87.61459350585938",
+				"hdg": "2",
+				"pid": 18414,
+				"rt": "3",
+				"des": "Michigan/Chicago",
+				"pdist": 9655,
+				"dly": false,
+				"tatripid": "10001295",
+				"origtatripno": "280451145",
+				"tablockid": "3 -717",
+				"zone": "",
+				"mode": 1,
+				"psgld": "N/A",
+				"stst": 45120,
+				"stsd": "2026-11-22"
+			}
+		],
+		"error": [
+			{
+				"vid": "999999",
+				"msg": "No data found for parameter"
+			}
+		]
+	}
+}

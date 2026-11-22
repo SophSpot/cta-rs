@@ -397,6 +397,19 @@ pub struct Coordinates {
     pub lon: f64,
 }
 
+/// A vehicle's last reported position: where it is and which way it's facing.
+///
+/// Used for trains ([`trains::Arrival::position`]) and buses
+/// ([`buses::Vehicle::position`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Position {
+    /// Where the vehicle is.
+    pub coordinates: Coordinates,
+    /// Compass heading in degrees, 0–359, where 0 is north and 90 is east.
+    pub heading: u16,
+}
+
 pub(crate) fn chicago() -> Result<TimeZone, DecodeError> {
     Ok(TimeZone::get("America/Chicago")?)
 }

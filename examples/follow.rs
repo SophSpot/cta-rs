@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(p) = followed.position {
         println!(
             "Now at {:.5}, {:.5}, heading {}°\n",
-            p.lat, p.lon, p.heading
+            p.coordinates.lat, p.coordinates.lon, p.heading
         );
     }
     for stop in &followed.stops {

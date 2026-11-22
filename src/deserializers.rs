@@ -118,6 +118,19 @@ pub fn bus_time<'de, D: serde::Deserializer<'de>>(d: D) -> Result<jiff::civil::D
     parse_bus_time(&s).map_err(serde::de::Error::custom)
 }
 
+/// Like [`bus_time`], but a missing value, `null`, or `""` is `None`.
+pub fn opt_bus_time<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<jiff::civil::DateTime>, D::Error> {
+    match Option::<String>::deserialize(d)? {
+        None => Ok(None),
+        Some(s) if s.trim().is_empty() => Ok(None),
+        Some(s) => parse_bus_time(&s)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
 pub fn parse_bus_time(s: &str) -> Result<jiff::civil::DateTime, jiff::Error> {
     jiff::civil::DateTime::strptime("%Y%m%d %H:%M:%S", s)
         .or_else(|_| jiff::civil::DateTime::strptime("%Y%m%d %H:%M", s))

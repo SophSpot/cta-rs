@@ -9,7 +9,10 @@ fn api_key() -> String {
 #[cfg(feature = "reqwest")]
 mod with_reqwest {
     use super::api_key;
-    use cta::buses::{Direction, DirectionsQuery, LocalesQuery, RoutesQuery, StopId, StopsQuery};
+    use cta::buses::{
+        Direction, DirectionsQuery, LocalesQuery, RoutesQuery, StopId, StopsQuery, VehicleId,
+        VehiclesQuery,
+    };
     use cta::client::AsyncClient;
     use cta::{Api, ApiErrorKind, Error};
 
@@ -96,6 +99,36 @@ mod with_reqwest {
 
     #[tokio::test]
     #[ignore = "hits the live CTA API"]
+    async fn vehicles_by_route_then_by_id() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        // Some of these will have buses at any hour.
+        let query = VehiclesQuery::routes(["3", "4", "9", "20", "22", "49", "79", "N5"]).unwrap();
+        let vehicles = client
+            .buses()
+            .vehicles(&query)
+            .await
+            .expect("request should succeed");
+        let Some(first) = vehicles.first() else {
+            return; // nothing running; nothing more to check
+        };
+        let age = jiff::ZonedDateTime::now().duration_since(&first.updated_at);
+        assert!(
+            age < jiff::SignedDuration::from_mins(10),
+            "stale: {first:?}"
+        );
+
+        let query = VehiclesQuery::vehicles([first.id, VehicleId(999_999)]).unwrap();
+        let again = client
+            .buses()
+            .vehicles(&query)
+            .await
+            .expect("an unknown bus is left out, not an error");
+        let ids: Vec<_> = again.iter().map(|v| v.id).collect();
+        assert_eq!(ids, [first.id]);
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
     async fn locales() {
         let client = AsyncClient::builder().bus_key(api_key()).build();
         let locales = client
@@ -127,7 +160,9 @@ mod with_reqwest {
 #[cfg(feature = "ureq")]
 mod with_ureq {
     use super::api_key;
-    use cta::buses::{DirectionsQuery, LocalesQuery, RoutesQuery, StopId, StopsQuery};
+    use cta::buses::{
+        DirectionsQuery, LocalesQuery, RoutesQuery, StopId, StopsQuery, VehiclesQuery,
+    };
     use cta::client::BlockingClient;
     use cta::{ApiErrorKind, Error};
 
@@ -158,6 +193,16 @@ mod with_ureq {
             .stops(&StopsQuery::at(StopId(456)))
             .expect("request should succeed");
         assert_eq!(stops.len(), 1);
+    }
+
+    #[test]
+    #[ignore = "hits the live CTA API"]
+    fn vehicles() {
+        let client = BlockingClient::builder().bus_key(api_key()).build();
+        client
+            .buses()
+            .vehicles(&VehiclesQuery::route("20"))
+            .expect("request should succeed");
     }
 
     #[test]
