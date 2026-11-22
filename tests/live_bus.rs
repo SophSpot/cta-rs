@@ -10,8 +10,8 @@ fn api_key() -> String {
 mod with_reqwest {
     use super::api_key;
     use cta::buses::{
-        Direction, DirectionsQuery, LocalesQuery, RoutesQuery, StopId, StopsQuery, VehicleId,
-        VehiclesQuery,
+        Direction, DirectionsQuery, LocalesQuery, PredictionsQuery, RoutesQuery, StopId,
+        StopsQuery, VehicleId, VehiclesQuery,
     };
     use cta::client::AsyncClient;
     use cta::{Api, ApiErrorKind, Error};
@@ -129,6 +129,44 @@ mod with_reqwest {
 
     #[tokio::test]
     #[ignore = "hits the live CTA API"]
+    async fn predictions_for_stop_then_vehicle() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        // Madison & Jefferson (westbound 20), plus a stop that doesn't exist.
+        let query = PredictionsQuery::stops([StopId(456), StopId(999_999)])
+            .unwrap()
+            .route("20")
+            .top(3);
+        let preds = client
+            .buses()
+            .predictions(&query)
+            .await
+            .expect("an unknown stop is left out, not an error");
+        assert!(preds.len() <= 3, "{preds:?}");
+        assert!(preds.iter().all(|p| p.stop == StopId(456)));
+        assert!(preds.iter().all(|p| p.route.as_str() == "20"));
+
+        let now = client.buses().time().await.expect("time should work");
+        if let Some(p) = preds.iter().find(|p| !p.dynamic_action.is_canceled()) {
+            let eta = p.eta_from(&now);
+            assert!(
+                eta < jiff::SignedDuration::from_hours(3),
+                "{eta:?} for {p:?}"
+            );
+        }
+
+        let Some(bus) = preds.iter().find_map(|p| p.vehicle) else {
+            return; // nothing running; nothing more to check
+        };
+        let upcoming = client
+            .buses()
+            .predictions(PredictionsQuery::vehicle(bus))
+            .await
+            .expect("request should succeed");
+        assert!(upcoming.iter().all(|p| p.vehicle == Some(bus)));
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
     async fn locales() {
         let client = AsyncClient::builder().bus_key(api_key()).build();
         let locales = client
@@ -161,7 +199,8 @@ mod with_reqwest {
 mod with_ureq {
     use super::api_key;
     use cta::buses::{
-        DirectionsQuery, LocalesQuery, RoutesQuery, StopId, StopsQuery, VehiclesQuery,
+        DirectionsQuery, LocalesQuery, PredictionsQuery, RoutesQuery, StopId, StopsQuery,
+        VehiclesQuery,
     };
     use cta::client::BlockingClient;
     use cta::{ApiErrorKind, Error};
@@ -203,6 +242,18 @@ mod with_ureq {
             .buses()
             .vehicles(&VehiclesQuery::route("20"))
             .expect("request should succeed");
+    }
+
+    #[test]
+    #[ignore = "hits the live CTA API"]
+    fn predictions() {
+        let client = BlockingClient::builder().bus_key(api_key()).build();
+        let query = PredictionsQuery::at(StopId(456)).top(2);
+        let preds = client
+            .buses()
+            .predictions(&query)
+            .expect("request should succeed");
+        assert!(preds.len() <= 2);
     }
 
     #[test]

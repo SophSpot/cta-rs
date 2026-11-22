@@ -77,6 +77,7 @@ struct DirectionsCall<'a>(&'a buses::DirectionsQuery);
 struct LocalesCall<'a>(&'a buses::LocalesQuery);
 struct StopsCall<'a>(&'a buses::StopsQuery);
 struct VehiclesCall<'a>(&'a buses::VehiclesQuery);
+struct PredictionsCall(buses::PredictionsQuery);
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -163,6 +164,17 @@ impl Endpoint for VehiclesCall<'_> {
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         buses::parse_vehicles(body)
+    }
+}
+
+impl Endpoint for PredictionsCall {
+    type Output = Vec<buses::Prediction>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::predictions_request(base, key, &self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_predictions(body)
     }
 }
 
@@ -523,6 +535,34 @@ impl<H: AsyncHttpClient> Buses<'_, H> {
         self.client.call(VehiclesCall(query)).await
     }
 
+    /// Predicted arrivals at some stops, or the upcoming stops of some buses.
+    ///
+    /// Predictions come soonest first. Stops with no service and buses that aren't in
+    /// service are left out rather than reported as errors. Canceled trips are included;
+    /// check [`Prediction::dynamic_action`](buses::Prediction::dynamic_action).
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::{Countdown, PredictionsQuery, StopId};
+    ///
+    /// let query = PredictionsQuery::at(StopId(456)).route("20").top(3);
+    /// for p in client.buses().predictions(&query).await? {
+    ///     match p.countdown {
+    ///         Countdown::Minutes(m) => println!("{} to {} in {m} min", p.route, p.destination),
+    ///         _ => println!("{} to {}: {:?}", p.route, p.destination, p.countdown),
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn predictions(
+        &self,
+        query: impl Into<buses::PredictionsQuery>,
+    ) -> Result<Vec<buses::Prediction>, Error<H::Error>> {
+        self.client.call(PredictionsCall(query.into())).await
+    }
+
     /// The languages Bus Tracker accepts, for a query's `locale` method.
     ///
     /// See [`Locale`](buses::Locale) for what CTA translates today.
@@ -704,6 +744,16 @@ impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
         self.client.call(VehiclesCall(query))
     }
 
+    /// Predicted arrivals at some stops, or the upcoming stops of some buses.
+    ///
+    /// See [`Buses::predictions`].
+    pub fn predictions(
+        &self,
+        query: impl Into<buses::PredictionsQuery>,
+    ) -> Result<Vec<buses::Prediction>, Error<H::Error>> {
+        self.client.call(PredictionsCall(query.into()))
+    }
+
     /// The languages Bus Tracker accepts, for a query's `locale` method.
     ///
     /// See [`Buses::locales`].
@@ -760,6 +810,7 @@ mod tests {
     const BUS_LOCALES: &[u8] = include_bytes!("../tests/fixtures/bus_locales_native.json");
     const BUS_STOPS: &[u8] = include_bytes!("../tests/fixtures/bus_stops_by_id.json");
     const BUS_VEHICLES: &[u8] = include_bytes!("../tests/fixtures/bus_vehicles_by_id.json");
+    const BUS_PREDICTIONS: &[u8] = include_bytes!("../tests/fixtures/bus_predictions_456.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -1042,6 +1093,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn async_bus_predictions() {
+        let http = FakeHttp::ok(BUS_PREDICTIONS);
+        let query = buses::PredictionsQuery::at(buses::StopId(456))
+            .route("20")
+            .top(4);
+        let client = async_bus_client(http.clone());
+        // By reference, like the other bus methods, or by value.
+        assert_eq!(client.buses().predictions(&query).await.unwrap().len(), 4);
+        client.buses().predictions(query).await.unwrap();
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getpredictions");
+        assert_eq!(
+            url.query(),
+            Some("key=k&stpid=456&rt=20&top=4&tmres=s&format=json")
+        );
+    }
+
+    #[tokio::test]
     async fn async_bus_locales() {
         let http = FakeHttp::ok(BUS_LOCALES);
         let locales = async_bus_client(http.clone())
@@ -1163,6 +1232,21 @@ mod tests {
         assert_eq!(
             http.last_url().query(),
             Some("key=k&vid=8932&tmres=s&format=json")
+        );
+    }
+
+    #[test]
+    fn blocking_bus_predictions() {
+        let http = FakeHttp::ok(BUS_PREDICTIONS);
+        let query = buses::PredictionsQuery::vehicle(buses::VehicleId(8864));
+        let preds = blocking_bus_client(http.clone())
+            .buses()
+            .predictions(&query)
+            .unwrap();
+        assert_eq!(preds.len(), 4);
+        assert_eq!(
+            http.last_url().query(),
+            Some("key=k&vid=8864&tmres=s&format=json")
         );
     }
 

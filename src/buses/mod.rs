@@ -10,6 +10,7 @@
 
 mod directions;
 mod locales;
+mod predictions;
 mod routes;
 mod stops;
 mod time;
@@ -17,6 +18,10 @@ mod vehicles;
 
 pub use directions::{DirectionInfo, DirectionsQuery, directions_request, parse_directions};
 pub use locales::{LocaleInfo, LocalesQuery, locales_request, parse_locales};
+pub use predictions::{
+    Countdown, DynamicAction, FlagStop, Prediction, PredictionKind, PredictionsQuery,
+    StopPredictions, VehiclePredictions, parse_predictions, predictions_request,
+};
 pub use routes::{RouteInfo, RoutesQuery, parse_routes, routes_request};
 pub use stops::{Stop, StopsQuery, parse_stops, stops_request};
 pub use time::{parse_time, time_request};
