@@ -10,8 +10,8 @@ fn api_key() -> String {
 mod with_reqwest {
     use super::api_key;
     use cta::buses::{
-        DetoursQuery, Direction, DirectionsQuery, LocalesQuery, PatternId, PatternsQuery,
-        PredictionsQuery, RoutesQuery, StopId, StopsQuery, VehicleId, VehiclesQuery,
+        DetoursQuery, Direction, DirectionsQuery, EnhancedDetoursQuery, LocalesQuery, PatternId,
+        PatternsQuery, PredictionsQuery, RoutesQuery, StopId, StopsQuery, VehicleId, VehiclesQuery,
     };
     use cta::client::AsyncClient;
     use cta::{Api, ApiErrorKind, Error};
@@ -229,6 +229,41 @@ mod with_reqwest {
             .find(|p| p.detour.as_ref() == Some(&detour.id))
         {
             assert!(!p.original_points.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
+    async fn enhanced_detours_match_detours_and_patterns() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        let schedules = client
+            .buses()
+            .enhanced_detours(&EnhancedDetoursQuery::all())
+            .await
+            .expect("request should succeed");
+        let detours = client
+            .buses()
+            .detours(&DetoursQuery::all())
+            .await
+            .expect("request should succeed");
+        // Enhanced detours also include upcoming ones, so every current detour is there.
+        for d in &detours {
+            assert!(
+                schedules.iter().any(|s| s.detour.id == d.id),
+                "{} missing from enhanced detours",
+                d.id
+            );
+        }
+        for s in &schedules {
+            for p in &s.patterns {
+                let path = p.decode_path().expect("paths should decode");
+                assert!(
+                    path.iter()
+                        .all(|c| (41.0..43.0).contains(&c.lat) && (-88.5..-87.0).contains(&c.lon)),
+                    "path for {:?} isn't in Chicago",
+                    p.detour
+                );
+            }
         }
     }
 

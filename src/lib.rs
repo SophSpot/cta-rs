@@ -83,6 +83,7 @@
 //! | `routes`, `directions`, `stops` | Routes, the directions they run, and their stops |
 //! | `patterns` | The paths routes take, with stops in order ([`buses::Pattern`]) |
 //! | `detours` | Current detours ([`buses::Detour`]) |
+//! | `enhanced_detours` | Detours with trip-level details, for GTFS-Realtime feeds ([`buses::DetourSchedule`]) |
 //! | `locales`, `time` | The languages Bus Tracker accepts, and its clock |
 //!
 //! See [`buses`] for more, including how detours link to stops and patterns.

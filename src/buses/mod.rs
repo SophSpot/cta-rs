@@ -21,6 +21,7 @@
 //! | [`stops`](crate::client::Buses::stops) | Stops on a route in one direction, or up to 10 stops by ID ([`Stop`]) |
 //! | [`patterns`](crate::client::Buses::patterns) | The paths a route takes, with stops in order ([`Pattern`]) |
 //! | [`detours`](crate::client::Buses::detours) | Current detours ([`Detour`]) |
+//! | [`enhanced_detours`](crate::client::Buses::enhanced_detours) | Current and upcoming detours with trip-level details, for GTFS-Realtime feeds ([`DetourSchedule`]) |
 //! | [`locales`](crate::client::Buses::locales) | The languages Bus Tracker accepts ([`LocaleInfo`]) |
 //! | [`time`](crate::client::Buses::time) | Bus Tracker's clock |
 //!
@@ -48,6 +49,11 @@
 //! Canceled detours stay in the list with [`active`](Detour::active) set to `false`,
 //! because a bus may still be running one.
 //!
+//! [`enhanced_detours`](crate::client::Buses::enhanced_detours) gives the same detours,
+//! plus upcoming ones, with trip-level details: the trips and dates affected, each
+//! detoured segment, replaced stops, and delays ([`DetourSchedule`]). It's meant for
+//! building GTFS-Realtime feeds; apps for riders usually only need the calls above.
+//!
 //! ```no_run
 //! # #[cfg(feature = "reqwest")]
 //! # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
@@ -65,6 +71,7 @@
 
 mod detours;
 mod directions;
+mod enhanced_detours;
 mod locales;
 mod patterns;
 mod predictions;
@@ -75,6 +82,10 @@ mod vehicles;
 
 pub use detours::{Detour, DetourRoute, DetoursQuery, detours_request, parse_detours};
 pub use directions::{DirectionInfo, DirectionsQuery, directions_request, parse_directions};
+pub use enhanced_detours::{
+    DetourPattern, DetourSchedule, DetourSegment, DetourStop, DetourTrip, EnhancedDetoursQuery,
+    ReplacedStop, enhanced_detours_request, parse_enhanced_detours,
+};
 pub use locales::{LocaleInfo, LocalesQuery, locales_request, parse_locales};
 pub use patterns::{Pattern, PatternPoint, PatternsQuery, parse_patterns, patterns_request};
 pub use predictions::{

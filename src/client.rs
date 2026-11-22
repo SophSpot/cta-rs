@@ -80,6 +80,7 @@ struct VehiclesCall<'a>(&'a buses::VehiclesQuery);
 struct PredictionsCall(buses::PredictionsQuery);
 struct PatternsCall<'a>(&'a buses::PatternsQuery);
 struct DetoursCall<'a>(&'a buses::DetoursQuery);
+struct EnhancedDetoursCall<'a>(&'a buses::EnhancedDetoursQuery);
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -199,6 +200,17 @@ impl Endpoint for DetoursCall<'_> {
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         buses::parse_detours(body)
+    }
+}
+
+impl Endpoint for EnhancedDetoursCall<'_> {
+    type Output = Vec<buses::DetourSchedule>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::enhanced_detours_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_enhanced_detours(body)
     }
 }
 
@@ -639,6 +651,33 @@ impl<H: AsyncHttpClient> Buses<'_, H> {
         self.client.call(DetoursCall(query)).await
     }
 
+    /// Current and upcoming detours with trip-level details: the trips and dates
+    /// affected, each detoured segment, replaced stops, and delays.
+    ///
+    /// This is meant for building GTFS-Realtime feeds. It can't be filtered, and the
+    /// response is large (several hundred kilobytes). For showing detours to riders, use
+    /// [`detours`](Self::detours) with [`patterns`](Self::patterns) and
+    /// [`stops`](Self::stops); see [Detours](crate::buses#detours).
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::EnhancedDetoursQuery;
+    ///
+    /// for s in client.buses().enhanced_detours(&EnhancedDetoursQuery::all()).await? {
+    ///     let trips: usize = s.patterns.iter().map(|p| p.trips.len()).sum();
+    ///     println!("{}: {} patterns, {trips} trips", s.detour.id, s.patterns.len());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn enhanced_detours(
+        &self,
+        query: &buses::EnhancedDetoursQuery,
+    ) -> Result<Vec<buses::DetourSchedule>, Error<H::Error>> {
+        self.client.call(EnhancedDetoursCall(query)).await
+    }
+
     /// The languages Bus Tracker accepts, for a query's `locale` method.
     ///
     /// See [`Locale`](buses::Locale) for what CTA translates today.
@@ -851,6 +890,16 @@ impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
         self.client.call(DetoursCall(query))
     }
 
+    /// Current and upcoming detours with trip-level details, for GTFS-Realtime feeds.
+    ///
+    /// See [`Buses::enhanced_detours`].
+    pub fn enhanced_detours(
+        &self,
+        query: &buses::EnhancedDetoursQuery,
+    ) -> Result<Vec<buses::DetourSchedule>, Error<H::Error>> {
+        self.client.call(EnhancedDetoursCall(query))
+    }
+
     /// The languages Bus Tracker accepts, for a query's `locale` method.
     ///
     /// See [`Buses::locales`].
@@ -910,6 +959,7 @@ mod tests {
     const BUS_PREDICTIONS: &[u8] = include_bytes!("../tests/fixtures/bus_predictions_456.json");
     const BUS_PATTERNS: &[u8] = include_bytes!("../tests/fixtures/bus_patterns_20.json");
     const BUS_DETOURS: &[u8] = include_bytes!("../tests/fixtures/bus_detours.json");
+    const BUS_ENHANCED: &[u8] = include_bytes!("../tests/fixtures/bus_enhanced_detours.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -1242,6 +1292,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn async_bus_enhanced_detours() {
+        let http = FakeHttp::ok(BUS_ENHANCED);
+        let schedules = async_bus_client(http.clone())
+            .buses()
+            .enhanced_detours(&buses::EnhancedDetoursQuery::all())
+            .await
+            .unwrap();
+        assert_eq!(schedules.len(), 4);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getenhanceddetours");
+        assert_eq!(url.query(), Some("key=k&format=json"));
+    }
+
+    #[tokio::test]
     async fn async_bus_locales() {
         let http = FakeHttp::ok(BUS_LOCALES);
         let locales = async_bus_client(http.clone())
@@ -1402,6 +1466,16 @@ mod tests {
             .unwrap();
         assert!(detours.iter().all(|d| d.active));
         assert_eq!(http.last_url().query(), Some("key=k&format=json"));
+    }
+
+    #[test]
+    fn blocking_bus_enhanced_detours() {
+        let http = FakeHttp::ok(BUS_ENHANCED);
+        let schedules = blocking_bus_client(http.clone())
+            .buses()
+            .enhanced_detours(&buses::EnhancedDetoursQuery::all())
+            .unwrap();
+        assert!(schedules.iter().all(|s| !s.patterns.is_empty()));
     }
 
     #[test]

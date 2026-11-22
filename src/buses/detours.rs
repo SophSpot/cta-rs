@@ -29,9 +29,16 @@ struct RawDetour {
 }
 
 #[derive(Deserialize)]
-struct RawRouteDirection {
+pub(super) struct RawRouteDirection {
     rt: String,
     dir: String,
+}
+
+pub(super) fn to_detour_route(r: RawRouteDirection) -> DetourRoute {
+    DetourRoute {
+        route: Route(r.rt),
+        direction: Direction::from(r.dir),
+    }
 }
 
 /// A detour, as listed by [`Buses::detours`](crate::client::Buses::detours).
@@ -183,14 +190,7 @@ fn to_detour(d: RawDetour, tz: &TimeZone) -> Result<Detour, DecodeError> {
         version: d.ver,
         active: d.st != 0,
         description: d.desc.trim().to_owned(),
-        affects: d
-            .rtdirs
-            .into_iter()
-            .map(|r| DetourRoute {
-                route: Route(r.rt),
-                direction: Direction::from(r.dir),
-            })
-            .collect(),
+        affects: d.rtdirs.into_iter().map(to_detour_route).collect(),
         start: d.startdt.to_zoned_datetime(tz.clone())?,
         end: d.enddt.to_zoned_datetime(tz.clone())?,
     })
