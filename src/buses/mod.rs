@@ -8,8 +8,10 @@
 //! functions are for sending requests yourself: they build the URL and parse the response
 //! body without doing any I/O.
 
+mod routes;
 mod time;
 
+pub use routes::{RouteInfo, parse_routes, routes_request};
 pub use time::{parse_time, time_request};
 
 use crate::deserializers::one_or_many;
@@ -17,10 +19,66 @@ use crate::{ApiError, DecodeError, ResponseError};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
+use std::fmt::{Display, Formatter};
 
 /// The Bus Tracker API's base URL. The clients use this unless given another with
 /// [`ClientBuilder::bus_base_url`](crate::client::ClientBuilder::bus_base_url).
 pub const DEFAULT_BASE_URL: &str = "https://www.ctabustracker.com/bustime/api/v3/";
+
+/// A bus route's code, such as `"20"` (Madison) or `"X9"` (Ashland Express).
+///
+/// This is the `rt` that Bus Tracker calls take and return. List every route with its
+/// name using [`Buses::routes`](crate::client::Buses::routes).
+///
+/// The code is used exactly as given, without checking it. An unknown route gets no
+/// results rather than an error.
+///
+/// ```
+/// use cta::buses::Route;
+///
+/// let route = Route::from("X9");
+/// assert_eq!(route, Route::new("X9"));
+/// assert_eq!(route.as_str(), "X9");
+/// assert_eq!(route.to_string(), "X9");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
+pub struct Route(pub String);
+
+impl Route {
+    /// A route with this code.
+    pub fn new(code: impl Into<String>) -> Self {
+        Route(code.into())
+    }
+
+    /// The route's code, e.g. `"20"`.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for Route {
+    fn from(code: &str) -> Self {
+        Route::new(code)
+    }
+}
+
+impl From<String> for Route {
+    fn from(code: String) -> Self {
+        Route(code)
+    }
+}
+
+impl Display for Route {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // `pad` (not `write_str`) so `{:<4}` / `{:>4}` alignment works in tables
+        f.pad(&self.0)
+    }
+}
 
 #[derive(Deserialize)]
 struct RawResponse {
@@ -82,6 +140,37 @@ mod tests {
 
     const BAD_KEY: &[u8] =
         br#"{"bustime-response": {"error": [{"msg": "Invalid API access key supplied"}]}}"#;
+
+    #[test]
+    fn route_conversions_agree() {
+        let from_str = Route::from("X9");
+        assert_eq!(from_str, Route::from(String::from("X9")));
+        assert_eq!(from_str, Route::new("X9"));
+        assert_eq!(from_str, Route("X9".into()));
+    }
+
+    #[test]
+    fn route_is_kept_as_given() {
+        assert_eq!(Route::from(" x9 ").as_str(), " x9 ");
+    }
+
+    #[test]
+    fn route_display_supports_padding() {
+        assert_eq!(format!("[{:<4}]", Route::from("20")), "[20  ]");
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn route_serializes_as_plain_string() {
+        assert_eq!(
+            serde_json::to_string(&Route::from("X9")).unwrap(),
+            r#""X9""#
+        );
+        assert_eq!(
+            serde_json::from_str::<Route>(r#""X9""#).unwrap(),
+            Route::from("X9")
+        );
+    }
 
     #[test]
     fn request_error_becomes_api_error() {

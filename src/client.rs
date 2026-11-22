@@ -1,9 +1,8 @@
 //! Async and blocking clients, and the traits for plugging in an HTTP client.
 
 use crate::trains::{
-    Arrival, ArrivalsQuery, FollowedTrain, LocationsQuery, TrainLocation,
-    arrivals_request, follow_request, locations_request, parse_arrivals, parse_follow,
-    parse_locations,
+    Arrival, ArrivalsQuery, FollowedTrain, LocationsQuery, TrainLocation, arrivals_request,
+    follow_request, locations_request, parse_arrivals, parse_follow, parse_locations,
 };
 use crate::{Api, Error, Request, ResponseError, buses, trains};
 use jiff::ZonedDateTime;
@@ -73,6 +72,7 @@ struct ArrivalsCall<'a>(&'a ArrivalsQuery);
 struct LocationsCall<'a>(&'a LocationsQuery);
 struct FollowCall<'a>(&'a str);
 struct TimeCall;
+struct RoutesCall;
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -115,6 +115,17 @@ impl Endpoint for TimeCall {
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         buses::parse_time(body)
+    }
+}
+
+impl Endpoint for RoutesCall {
+    type Output = Vec<buses::RouteInfo>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::routes_request(base, key))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_routes(body)
     }
 }
 
@@ -373,6 +384,21 @@ impl<H: AsyncHttpClient> Buses<'_, H> {
     pub async fn time(&self) -> Result<ZonedDateTime, Error<H::Error>> {
         self.client.call(TimeCall).await
     }
+
+    /// Every bus route, with its code, name, and color.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// for r in client.buses().routes().await? {
+    ///     println!("{:>4}  {}", r.route, r.name);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn routes(&self) -> Result<Vec<buses::RouteInfo>, Error<H::Error>> {
+        self.client.call(RoutesCall).await
+    }
 }
 
 #[cfg(feature = "reqwest")]
@@ -495,6 +521,11 @@ impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
     pub fn time(&self) -> Result<ZonedDateTime, Error<H::Error>> {
         self.client.call(TimeCall)
     }
+
+    /// Every bus route, with its code, name, and color.
+    pub fn routes(&self) -> Result<Vec<buses::RouteInfo>, Error<H::Error>> {
+        self.client.call(RoutesCall)
+    }
 }
 
 impl<H: BlockingHttpClient> ClientBuilder<Blocking, H> {
@@ -537,6 +568,7 @@ mod tests {
     const BAD_KEY: &[u8] = br#"{"ctatt":{"errCd":"101","errNm":"Invalid API key"}}"#;
     const BUS_TIME: &[u8] = include_bytes!("../tests/fixtures/bus_time.json");
     const BUS_BAD_KEY: &[u8] = include_bytes!("../tests/fixtures/bus_bad_key.json");
+    const BUS_ROUTES: &[u8] = include_bytes!("../tests/fixtures/bus_routes.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -762,6 +794,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn async_bus_routes() {
+        let http = FakeHttp::ok(BUS_ROUTES);
+        let routes = async_bus_client(http.clone())
+            .buses()
+            .routes()
+            .await
+            .unwrap();
+        assert_eq!(routes.len(), 125);
+        assert_eq!(http.last_url().path(), "/bustime/api/v3/getroutes");
+    }
+
+    #[tokio::test]
     async fn async_bus_bad_key() {
         let client = async_bus_client(FakeHttp::ok(BUS_BAD_KEY));
         assert!(matches!(
@@ -829,6 +873,14 @@ mod tests {
             client.trains().arrivals(&q),
             Err(Error::Api(e)) if e.kind() == ApiErrorKind::InvalidKey
         ));
+    }
+
+    #[test]
+    fn blocking_bus_routes() {
+        let http = FakeHttp::ok(BUS_ROUTES);
+        let routes = blocking_bus_client(http.clone()).buses().routes().unwrap();
+        assert_eq!(routes.len(), 125);
+        assert_eq!(http.last_url().path(), "/bustime/api/v3/getroutes");
     }
 
     #[test]

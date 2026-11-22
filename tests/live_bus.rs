@@ -26,6 +26,21 @@ mod with_reqwest {
 
     #[tokio::test]
     #[ignore = "hits the live CTA API"]
+    async fn routes() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        let routes = client
+            .buses()
+            .routes()
+            .await
+            .expect("request should succeed");
+        assert!(
+            routes.iter().any(|r| r.route.as_str() == "20"),
+            "route 20 (Madison) should exist: {routes:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
     async fn bad_key_is_api_error() {
         let client = AsyncClient::builder().bus_key("not-a-real-key").build();
         let result = client.buses().time().await;
@@ -48,6 +63,14 @@ mod with_ureq {
     fn time() {
         let client = BlockingClient::builder().bus_key(api_key()).build();
         client.buses().time().expect("request should succeed");
+    }
+
+    #[test]
+    #[ignore = "hits the live CTA API"]
+    fn routes() {
+        let client = BlockingClient::builder().bus_key(api_key()).build();
+        let routes = client.buses().routes().expect("request should succeed");
+        assert!(!routes.is_empty());
     }
 
     #[test]
