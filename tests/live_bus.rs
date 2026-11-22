@@ -9,6 +9,7 @@ fn api_key() -> String {
 #[cfg(feature = "reqwest")]
 mod with_reqwest {
     use super::api_key;
+    use cta::buses::{Direction, DirectionsQuery, LocalesQuery, RoutesQuery};
     use cta::client::AsyncClient;
     use cta::{Api, ApiErrorKind, Error};
 
@@ -30,12 +31,54 @@ mod with_reqwest {
         let client = AsyncClient::builder().bus_key(api_key()).build();
         let routes = client
             .buses()
-            .routes()
+            .routes(&RoutesQuery::all())
             .await
             .expect("request should succeed");
         assert!(
             routes.iter().any(|r| r.route.as_str() == "20"),
             "route 20 (Madison) should exist: {routes:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
+    async fn directions() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        let dirs = client
+            .buses()
+            .directions(&DirectionsQuery::route("20"))
+            .await
+            .expect("request should succeed");
+        let dirs: Vec<_> = dirs.into_iter().map(|d| d.direction).collect();
+        assert_eq!(dirs, [Direction::Eastbound, Direction::Westbound]);
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
+    async fn unknown_route_has_no_directions() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        let dirs = client
+            .buses()
+            .directions(&DirectionsQuery::route("not-a-route"))
+            .await
+            .expect("an unknown route is empty, not an error");
+        assert!(dirs.is_empty(), "{dirs:?}");
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
+    async fn locales() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        let locales = client
+            .buses()
+            .locales(&LocalesQuery::all().native_names())
+            .await
+            .expect("request should succeed");
+        assert!(
+            locales
+                .iter()
+                .any(|l| l.locale.as_str() == "es" && l.name == "español"),
+            "{locales:?}"
         );
     }
 
@@ -55,6 +98,7 @@ mod with_reqwest {
 #[cfg(feature = "ureq")]
 mod with_ureq {
     use super::api_key;
+    use cta::buses::{DirectionsQuery, LocalesQuery, RoutesQuery};
     use cta::client::BlockingClient;
     use cta::{ApiErrorKind, Error};
 
@@ -69,8 +113,27 @@ mod with_ureq {
     #[ignore = "hits the live CTA API"]
     fn routes() {
         let client = BlockingClient::builder().bus_key(api_key()).build();
-        let routes = client.buses().routes().expect("request should succeed");
+        let routes = client
+            .buses()
+            .routes(&RoutesQuery::all())
+            .expect("request should succeed");
         assert!(!routes.is_empty());
+    }
+
+    #[test]
+    #[ignore = "hits the live CTA API"]
+    fn directions_and_locales() {
+        let client = BlockingClient::builder().bus_key(api_key()).build();
+        let dirs = client
+            .buses()
+            .directions(&DirectionsQuery::route("19"))
+            .expect("request should succeed");
+        assert!(!dirs.is_empty());
+        let locales = client
+            .buses()
+            .locales(&LocalesQuery::all())
+            .expect("request should succeed");
+        assert!(locales.iter().any(|l| l.locale.as_str() == "en"));
     }
 
     #[test]

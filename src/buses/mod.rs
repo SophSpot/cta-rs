@@ -8,10 +8,14 @@
 //! functions are for sending requests yourself: they build the URL and parse the response
 //! body without doing any I/O.
 
+mod directions;
+mod locales;
 mod routes;
 mod time;
 
-pub use routes::{RouteInfo, parse_routes, routes_request};
+pub use directions::{DirectionInfo, DirectionsQuery, directions_request, parse_directions};
+pub use locales::{LocaleInfo, LocalesQuery, locales_request, parse_locales};
+pub use routes::{RouteInfo, RoutesQuery, parse_routes, routes_request};
 pub use time::{parse_time, time_request};
 
 use crate::deserializers::one_or_many;
@@ -20,6 +24,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 use std::fmt::{Display, Formatter};
+use url::Url;
 
 /// The Bus Tracker API's base URL. The clients use this unless given another with
 /// [`ClientBuilder::bus_base_url`](crate::client::ClientBuilder::bus_base_url).
@@ -77,6 +82,156 @@ impl Display for Route {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // `pad` (not `write_str`) so `{:<4}` / `{:>4}` alignment works in tables
         f.pad(&self.0)
+    }
+}
+
+/// The direction a route runs in, such as [`Direction::Eastbound`].
+///
+/// List a route's directions with [`Buses::directions`](crate::client::Buses::directions).
+/// Every CTA route uses the four compass directions; [`Other`](Direction::Other) keeps
+/// anything else exactly as Bus Tracker sent it.
+///
+/// Converting from text ignores case, so `"eastbound"` and `"EASTBOUND"` both become
+/// [`Direction::Eastbound`]. Requests always send the form CTA uses, e.g. `"Eastbound"`.
+///
+/// ```
+/// use cta::buses::Direction;
+///
+/// assert_eq!(Direction::from("EASTBOUND"), Direction::Eastbound);
+/// assert_eq!(Direction::Eastbound.as_str(), "Eastbound");
+/// assert_eq!(Direction::from("Clockwise"), Direction::Other("Clockwise".into()));
+/// ```
+///
+/// Build an `Other` with `From` rather than directly: `Direction::Other("Eastbound".into())`
+/// is not equal to [`Direction::Eastbound`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(from = "String", into = "String")
+)]
+#[non_exhaustive]
+pub enum Direction {
+    /// Northbound.
+    Northbound,
+    /// Southbound.
+    Southbound,
+    /// Eastbound.
+    Eastbound,
+    /// Westbound.
+    Westbound,
+    /// A direction other than the four above, as Bus Tracker sent it.
+    Other(String),
+}
+
+impl Direction {
+    /// The text Bus Tracker uses for this direction, e.g. `"Eastbound"`.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Direction::Northbound => "Northbound",
+            Direction::Southbound => "Southbound",
+            Direction::Eastbound => "Eastbound",
+            Direction::Westbound => "Westbound",
+            Direction::Other(s) => s,
+        }
+    }
+
+    /// The named direction matching `s`, ignoring case.
+    fn named(s: &str) -> Option<Self> {
+        [
+            Direction::Northbound,
+            Direction::Southbound,
+            Direction::Eastbound,
+            Direction::Westbound,
+        ]
+        .into_iter()
+        .find(|d| d.as_str().eq_ignore_ascii_case(s))
+    }
+}
+
+impl From<&str> for Direction {
+    fn from(s: &str) -> Self {
+        Direction::named(s).unwrap_or_else(|| Direction::Other(s.to_owned()))
+    }
+}
+
+impl From<String> for Direction {
+    fn from(s: String) -> Self {
+        Direction::named(&s).unwrap_or(Direction::Other(s))
+    }
+}
+
+impl From<Direction> for String {
+    fn from(d: Direction) -> Self {
+        match d {
+            Direction::Other(s) => s,
+            named => named.as_str().to_owned(),
+        }
+    }
+}
+
+impl Display for Direction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.pad(self.as_str())
+    }
+}
+
+/// A Bus Tracker language code, such as `"en"` or `"es"`.
+///
+/// Pass it to a query's `locale` method. List the codes Bus Tracker accepts with
+/// [`Buses::locales`](crate::client::Buses::locales).
+///
+/// CTA lists Spanish, but its route, direction, and stop text is English in every
+/// locale today. Only the language names from `locales` are translated. Bus Tracker
+/// uses its default language for a code it doesn't support, without saying so.
+///
+/// ```
+/// use cta::buses::Locale;
+///
+/// assert_eq!(Locale::from("es").as_str(), "es");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
+pub struct Locale(pub String);
+
+impl Locale {
+    /// A locale with this code.
+    pub fn new(code: impl Into<String>) -> Self {
+        Locale(code.into())
+    }
+
+    /// The locale's code, e.g. `"es"`.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for Locale {
+    fn from(code: &str) -> Self {
+        Locale::new(code)
+    }
+}
+
+impl From<String> for Locale {
+    fn from(code: String) -> Self {
+        Locale(code)
+    }
+}
+
+impl Display for Locale {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.pad(&self.0)
+    }
+}
+
+/// Add `locale=<code>` to `url` if a locale was chosen.
+fn append_locale(url: &mut Url, locale: Option<&Locale>) {
+    if let Some(locale) = locale {
+        url.query_pairs_mut().append_pair("locale", locale.as_str());
     }
 }
 
@@ -157,6 +312,68 @@ mod tests {
     #[test]
     fn route_display_supports_padding() {
         assert_eq!(format!("[{:<4}]", Route::from("20")), "[20  ]");
+    }
+
+    #[test]
+    fn direction_parsing_ignores_case() {
+        for s in ["Eastbound", "eastbound", "EASTBOUND", "eAsTbOuNd"] {
+            assert_eq!(Direction::from(s), Direction::Eastbound, "{s}");
+            assert_eq!(Direction::from(s.to_owned()), Direction::Eastbound, "{s}");
+        }
+        assert_eq!(Direction::from("Northbound"), Direction::Northbound);
+        assert_eq!(Direction::from("Southbound"), Direction::Southbound);
+        assert_eq!(Direction::from("Westbound"), Direction::Westbound);
+    }
+
+    #[test]
+    fn direction_other_is_kept_as_given() {
+        for s in ["Clockwise", " Eastbound", "East", ""] {
+            let d = Direction::from(s);
+            assert_eq!(d, Direction::Other(s.into()), "{s:?}");
+            assert_eq!(d.as_str(), s);
+            assert_eq!(d.to_string(), s);
+        }
+    }
+
+    #[test]
+    fn direction_sends_canonical_text() {
+        assert_eq!(Direction::from("EASTBOUND").as_str(), "Eastbound");
+        assert_eq!(Direction::Westbound.to_string(), "Westbound");
+        assert_eq!(String::from(Direction::from("eastbound")), "Eastbound");
+        assert_eq!(String::from(Direction::from("Clockwise")), "Clockwise");
+    }
+
+    #[test]
+    fn locale_conversions_agree() {
+        assert_eq!(Locale::from("es"), Locale::new("es"));
+        assert_eq!(Locale::from(String::from("es")), Locale("es".into()));
+        assert_eq!(Locale::from("es").to_string(), "es");
+    }
+
+    #[test]
+    fn append_locale_only_when_set() {
+        let mut url = Url::parse("https://example.com/x?key=k").unwrap();
+        append_locale(&mut url, None);
+        assert_eq!(url.query(), Some("key=k"));
+        append_locale(&mut url, Some(&Locale::from("es")));
+        assert_eq!(url.query(), Some("key=k&locale=es"));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn direction_serializes_as_plain_string() {
+        assert_eq!(
+            serde_json::to_string(&Direction::Eastbound).unwrap(),
+            r#""Eastbound""#
+        );
+        assert_eq!(
+            serde_json::from_str::<Direction>(r#""EASTBOUND""#).unwrap(),
+            Direction::Eastbound
+        );
+        assert_eq!(
+            serde_json::from_str::<Direction>(r#""Clockwise""#).unwrap(),
+            Direction::Other("Clockwise".into())
+        );
     }
 
     #[cfg(feature = "serde")]

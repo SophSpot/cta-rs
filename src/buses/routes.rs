@@ -1,4 +1,4 @@
-use super::{Route, parse_envelope};
+use super::{Locale, Route, append_locale, parse_envelope};
 use crate::deserializers::one_or_many;
 use crate::{Request, ResponseError};
 use serde::Deserialize;
@@ -26,28 +26,59 @@ pub struct RouteInfo {
     /// The route's code, e.g. `"20"`. Pass it to other calls.
     pub route: Route,
     /// The route's name, e.g. `"Madison"`.
+    ///
+    /// Bus Tracker can translate this with [`RoutesQuery::locale`], but CTA returns
+    /// English in every locale today.
     pub name: String,
     /// The route's color on CTA maps, as `"#rrggbb"`, e.g. `"#336633"`.
     pub color: String,
     /// The route's label for showing to riders.
     ///
-    /// Bus Tracker provides it separately from the code, but it is the same as
-    /// [`route`](RouteInfo::route) for every CTA route today.
+    /// Bus Tracker provides it separately from the code and can translate it with
+    /// [`RoutesQuery::locale`], but it is the same as [`route`](RouteInfo::route) for
+    /// every CTA route, in every locale, today.
     pub display: String,
 }
 
-/// Build the request for every bus route, without sending it.
+/// Which routes to list. Bus Tracker always returns every route.
+///
+/// ```
+/// use cta::buses::RoutesQuery;
+///
+/// let english = RoutesQuery::all();
+/// let spanish = RoutesQuery::all().locale("es");
+/// ```
+#[must_use]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutesQuery {
+    locale: Option<Locale>,
+}
+
+impl RoutesQuery {
+    /// Every route.
+    pub fn all() -> Self {
+        Self { locale: None }
+    }
+
+    /// The language for route names. See [`Locale`] for what CTA translates today.
+    pub fn locale(mut self, locale: impl Into<Locale>) -> Self {
+        self.locale = Some(locale.into());
+        self
+    }
+}
+
+/// Build the request for the routes in `query`, without sending it.
 ///
 /// `base` is usually [`DEFAULT_BASE_URL`](super::DEFAULT_BASE_URL).
 ///
 /// # Panics
 ///
 /// If `base` can't be a base URL, such as a `mailto:` URL.
-pub fn routes_request(base: &Url, key: &str) -> Request {
+pub fn routes_request(base: &Url, key: &str, query: &RoutesQuery) -> Request {
     let mut url = base.join("getroutes").expect("base URL must be http(s)");
-    url.query_pairs_mut()
-        .append_pair("key", key)
-        .append_pair("format", "json");
+    url.query_pairs_mut().append_pair("key", key);
+    append_locale(&mut url, query.locale.as_ref());
+    url.query_pairs_mut().append_pair("format", "json");
     Request { url }
 }
 
@@ -79,12 +110,27 @@ mod tests {
     const ROUTES: &[u8] = include_bytes!("../../tests/fixtures/bus_routes.json");
     const BAD_KEY: &[u8] = include_bytes!("../../tests/fixtures/bus_bad_key.json");
 
+    fn base() -> Url {
+        Url::parse(super::super::DEFAULT_BASE_URL).unwrap()
+    }
+
     #[test]
     fn request_url() {
-        let base = Url::parse(super::super::DEFAULT_BASE_URL).unwrap();
         assert_eq!(
-            routes_request(&base, "k").url.as_str(),
+            routes_request(&base(), "k", &RoutesQuery::all())
+                .url
+                .as_str(),
             "https://www.ctabustracker.com/bustime/api/v3/getroutes?key=k&format=json"
+        );
+    }
+
+    #[test]
+    fn request_url_with_locale() {
+        assert_eq!(
+            routes_request(&base(), "k", &RoutesQuery::all().locale("es"))
+                .url
+                .as_str(),
+            "https://www.ctabustracker.com/bustime/api/v3/getroutes?key=k&locale=es&format=json"
         );
     }
 

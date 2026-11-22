@@ -72,7 +72,9 @@ struct ArrivalsCall<'a>(&'a ArrivalsQuery);
 struct LocationsCall<'a>(&'a LocationsQuery);
 struct FollowCall<'a>(&'a str);
 struct TimeCall;
-struct RoutesCall;
+struct RoutesCall<'a>(&'a buses::RoutesQuery);
+struct DirectionsCall<'a>(&'a buses::DirectionsQuery);
+struct LocalesCall<'a>(&'a buses::LocalesQuery);
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -118,14 +120,36 @@ impl Endpoint for TimeCall {
     }
 }
 
-impl Endpoint for RoutesCall {
+impl Endpoint for RoutesCall<'_> {
     type Output = Vec<buses::RouteInfo>;
     fn request(&self, config: &Config) -> Result<Request, Api> {
         let (base, key) = config.bus()?;
-        Ok(buses::routes_request(base, key))
+        Ok(buses::routes_request(base, key, self.0))
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         buses::parse_routes(body)
+    }
+}
+
+impl Endpoint for DirectionsCall<'_> {
+    type Output = Vec<buses::DirectionInfo>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::directions_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_directions(body)
+    }
+}
+
+impl Endpoint for LocalesCall<'_> {
+    type Output = Vec<buses::LocaleInfo>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::locales_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_locales(body)
     }
 }
 
@@ -390,14 +414,63 @@ impl<H: AsyncHttpClient> Buses<'_, H> {
     /// ```no_run
     /// # #[cfg(feature = "reqwest")]
     /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
-    /// for r in client.buses().routes().await? {
+    /// use cta::buses::RoutesQuery;
+    ///
+    /// for r in client.buses().routes(&RoutesQuery::all()).await? {
     ///     println!("{:>4}  {}", r.route, r.name);
     /// }
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn routes(&self) -> Result<Vec<buses::RouteInfo>, Error<H::Error>> {
-        self.client.call(RoutesCall).await
+    pub async fn routes(
+        &self,
+        query: &buses::RoutesQuery,
+    ) -> Result<Vec<buses::RouteInfo>, Error<H::Error>> {
+        self.client.call(RoutesCall(query)).await
+    }
+
+    /// The directions a route runs in, usually two.
+    ///
+    /// Some routes run in one direction only, and an unknown route has none.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::DirectionsQuery;
+    ///
+    /// for d in client.buses().directions(&DirectionsQuery::route("20")).await? {
+    ///     println!("{}", d.direction);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn directions(
+        &self,
+        query: &buses::DirectionsQuery,
+    ) -> Result<Vec<buses::DirectionInfo>, Error<H::Error>> {
+        self.client.call(DirectionsCall(query)).await
+    }
+
+    /// The languages Bus Tracker accepts, for a query's `locale` method.
+    ///
+    /// See [`Locale`](buses::Locale) for what CTA translates today.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::LocalesQuery;
+    ///
+    /// for l in client.buses().locales(&LocalesQuery::all().native_names()).await? {
+    ///     println!("{}: {}", l.locale, l.name);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn locales(
+        &self,
+        query: &buses::LocalesQuery,
+    ) -> Result<Vec<buses::LocaleInfo>, Error<H::Error>> {
+        self.client.call(LocalesCall(query)).await
     }
 }
 
@@ -523,8 +596,33 @@ impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
     }
 
     /// Every bus route, with its code, name, and color.
-    pub fn routes(&self) -> Result<Vec<buses::RouteInfo>, Error<H::Error>> {
-        self.client.call(RoutesCall)
+    ///
+    /// See [`Buses::routes`].
+    pub fn routes(
+        &self,
+        query: &buses::RoutesQuery,
+    ) -> Result<Vec<buses::RouteInfo>, Error<H::Error>> {
+        self.client.call(RoutesCall(query))
+    }
+
+    /// The directions a route runs in, usually two.
+    ///
+    /// See [`Buses::directions`].
+    pub fn directions(
+        &self,
+        query: &buses::DirectionsQuery,
+    ) -> Result<Vec<buses::DirectionInfo>, Error<H::Error>> {
+        self.client.call(DirectionsCall(query))
+    }
+
+    /// The languages Bus Tracker accepts, for a query's `locale` method.
+    ///
+    /// See [`Buses::locales`].
+    pub fn locales(
+        &self,
+        query: &buses::LocalesQuery,
+    ) -> Result<Vec<buses::LocaleInfo>, Error<H::Error>> {
+        self.client.call(LocalesCall(query))
     }
 }
 
@@ -569,6 +667,8 @@ mod tests {
     const BUS_TIME: &[u8] = include_bytes!("../tests/fixtures/bus_time.json");
     const BUS_BAD_KEY: &[u8] = include_bytes!("../tests/fixtures/bus_bad_key.json");
     const BUS_ROUTES: &[u8] = include_bytes!("../tests/fixtures/bus_routes.json");
+    const BUS_DIRECTIONS: &[u8] = include_bytes!("../tests/fixtures/bus_directions_20.json");
+    const BUS_LOCALES: &[u8] = include_bytes!("../tests/fixtures/bus_locales_native.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -798,11 +898,40 @@ mod tests {
         let http = FakeHttp::ok(BUS_ROUTES);
         let routes = async_bus_client(http.clone())
             .buses()
-            .routes()
+            .routes(&buses::RoutesQuery::all())
             .await
             .unwrap();
         assert_eq!(routes.len(), 125);
         assert_eq!(http.last_url().path(), "/bustime/api/v3/getroutes");
+    }
+
+    #[tokio::test]
+    async fn async_bus_directions() {
+        let http = FakeHttp::ok(BUS_DIRECTIONS);
+        let query = buses::DirectionsQuery::route("20").locale("es");
+        let dirs = async_bus_client(http.clone())
+            .buses()
+            .directions(&query)
+            .await
+            .unwrap();
+        assert_eq!(dirs.len(), 2);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getdirections");
+        assert_eq!(url.query(), Some("key=k&rt=20&locale=es&format=json"));
+    }
+
+    #[tokio::test]
+    async fn async_bus_locales() {
+        let http = FakeHttp::ok(BUS_LOCALES);
+        let locales = async_bus_client(http.clone())
+            .buses()
+            .locales(&buses::LocalesQuery::all().native_names())
+            .await
+            .unwrap();
+        assert_eq!(locales[1].name, "español");
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getlocalelist");
+        assert_eq!(url.query(), Some("key=k&inLocaleLanguage=true&format=json"));
     }
 
     #[tokio::test]
@@ -878,9 +1007,31 @@ mod tests {
     #[test]
     fn blocking_bus_routes() {
         let http = FakeHttp::ok(BUS_ROUTES);
-        let routes = blocking_bus_client(http.clone()).buses().routes().unwrap();
+        let routes = blocking_bus_client(http.clone())
+            .buses()
+            .routes(&buses::RoutesQuery::all())
+            .unwrap();
         assert_eq!(routes.len(), 125);
         assert_eq!(http.last_url().path(), "/bustime/api/v3/getroutes");
+    }
+
+    #[test]
+    fn blocking_bus_directions_and_locales() {
+        let http = FakeHttp::ok(BUS_DIRECTIONS);
+        let dirs = blocking_bus_client(http.clone())
+            .buses()
+            .directions(&buses::DirectionsQuery::route("20"))
+            .unwrap();
+        assert_eq!(dirs[0].direction, buses::Direction::Eastbound);
+        assert_eq!(http.last_url().path(), "/bustime/api/v3/getdirections");
+
+        let http = FakeHttp::ok(BUS_LOCALES);
+        let locales = blocking_bus_client(http.clone())
+            .buses()
+            .locales(&buses::LocalesQuery::all())
+            .unwrap();
+        assert_eq!(locales.len(), 2);
+        assert_eq!(http.last_url().path(), "/bustime/api/v3/getlocalelist");
     }
 
     #[test]
