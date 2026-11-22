@@ -10,8 +10,8 @@ fn api_key() -> String {
 mod with_reqwest {
     use super::api_key;
     use cta::buses::{
-        Direction, DirectionsQuery, LocalesQuery, PredictionsQuery, RoutesQuery, StopId,
-        StopsQuery, VehicleId, VehiclesQuery,
+        Direction, DirectionsQuery, LocalesQuery, PatternId, PatternsQuery, PredictionsQuery,
+        RoutesQuery, StopId, StopsQuery, VehicleId, VehiclesQuery,
     };
     use cta::client::AsyncClient;
     use cta::{Api, ApiErrorKind, Error};
@@ -167,6 +167,35 @@ mod with_reqwest {
 
     #[tokio::test]
     #[ignore = "hits the live CTA API"]
+    async fn patterns_for_route_then_by_id() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        let patterns = client
+            .buses()
+            .patterns(&PatternsQuery::route("20"))
+            .await
+            .expect("request should succeed");
+        assert!(!patterns.is_empty());
+        for p in &patterns {
+            assert!(p.stops().count() > 10, "{:?} has few stops", p.id);
+            assert!(p.length_ft > 10_000.0);
+        }
+        // Madison & Jefferson is on a westbound pattern.
+        assert!(patterns.iter().any(|p| {
+            p.direction == Direction::Westbound && p.stops().any(|s| s == StopId(456))
+        }));
+
+        let ids = [patterns[0].id, PatternId(1)];
+        let again = client
+            .buses()
+            .patterns(&PatternsQuery::patterns(ids).unwrap())
+            .await
+            .expect("an unknown pattern is left out, not an error");
+        assert_eq!(again.len(), 1);
+        assert_eq!(again[0], patterns[0]);
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
     async fn locales() {
         let client = AsyncClient::builder().bus_key(api_key()).build();
         let locales = client
@@ -199,8 +228,8 @@ mod with_reqwest {
 mod with_ureq {
     use super::api_key;
     use cta::buses::{
-        DirectionsQuery, LocalesQuery, PredictionsQuery, RoutesQuery, StopId, StopsQuery,
-        VehiclesQuery,
+        DirectionsQuery, LocalesQuery, PatternsQuery, PredictionsQuery, RoutesQuery, StopId,
+        StopsQuery, VehiclesQuery,
     };
     use cta::client::BlockingClient;
     use cta::{ApiErrorKind, Error};
@@ -254,6 +283,17 @@ mod with_ureq {
             .predictions(&query)
             .expect("request should succeed");
         assert!(preds.len() <= 2);
+    }
+
+    #[test]
+    #[ignore = "hits the live CTA API"]
+    fn patterns() {
+        let client = BlockingClient::builder().bus_key(api_key()).build();
+        let patterns = client
+            .buses()
+            .patterns(&PatternsQuery::route("19"))
+            .expect("request should succeed");
+        assert!(patterns.iter().all(|p| p.stops().count() > 0));
     }
 
     #[test]

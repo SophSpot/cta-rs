@@ -10,6 +10,7 @@
 
 mod directions;
 mod locales;
+mod patterns;
 mod predictions;
 mod routes;
 mod stops;
@@ -18,6 +19,7 @@ mod vehicles;
 
 pub use directions::{DirectionInfo, DirectionsQuery, directions_request, parse_directions};
 pub use locales::{LocaleInfo, LocalesQuery, locales_request, parse_locales};
+pub use patterns::{Pattern, PatternPoint, PatternsQuery, parse_patterns, patterns_request};
 pub use predictions::{
     Countdown, DynamicAction, FlagStop, Prediction, PredictionKind, PredictionsQuery,
     StopPredictions, VehiclePredictions, parse_predictions, predictions_request,
@@ -396,6 +398,12 @@ pub enum QueryError {
     /// More routes than Bus Tracker accepts in one request.
     #[error("too many routes: {0} (Bus Tracker accepts at most 10)")]
     TooManyRoutes(usize),
+    /// A patterns query was given no pattern IDs.
+    #[error("a patterns query needs at least one pattern ID")]
+    NoPatterns,
+    /// More pattern IDs than Bus Tracker accepts in one request.
+    #[error("too many patterns: {0} (Bus Tracker accepts at most 10)")]
+    TooManyPatterns(usize),
 }
 
 /// Remove duplicates, keeping the first occurrence.

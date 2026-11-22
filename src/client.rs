@@ -78,6 +78,7 @@ struct LocalesCall<'a>(&'a buses::LocalesQuery);
 struct StopsCall<'a>(&'a buses::StopsQuery);
 struct VehiclesCall<'a>(&'a buses::VehiclesQuery);
 struct PredictionsCall(buses::PredictionsQuery);
+struct PatternsCall<'a>(&'a buses::PatternsQuery);
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -175,6 +176,17 @@ impl Endpoint for PredictionsCall {
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         buses::parse_predictions(body)
+    }
+}
+
+impl Endpoint for PatternsCall<'_> {
+    type Output = Vec<buses::Pattern>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::patterns_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_patterns(body)
     }
 }
 
@@ -563,6 +575,34 @@ impl<H: AsyncHttpClient> Buses<'_, H> {
         self.client.call(PredictionsCall(query.into())).await
     }
 
+    /// The paths routes take: each pattern's stops in order, and the points for drawing
+    /// it on a map.
+    ///
+    /// Unknown routes and pattern IDs are left out rather than reported as errors.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::{PatternPoint, PatternsQuery};
+    ///
+    /// for pattern in client.buses().patterns(&PatternsQuery::route("20")).await? {
+    ///     println!("{} ({:.1} mi)", pattern.direction, pattern.length_ft / 5280.0);
+    ///     for point in &pattern.points {
+    ///         if let PatternPoint::Stop { name, .. } = point {
+    ///             println!("  {name}");
+    ///         }
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn patterns(
+        &self,
+        query: &buses::PatternsQuery,
+    ) -> Result<Vec<buses::Pattern>, Error<H::Error>> {
+        self.client.call(PatternsCall(query)).await
+    }
+
     /// The languages Bus Tracker accepts, for a query's `locale` method.
     ///
     /// See [`Locale`](buses::Locale) for what CTA translates today.
@@ -754,6 +794,17 @@ impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
         self.client.call(PredictionsCall(query.into()))
     }
 
+    /// The paths routes take: each pattern's stops in order, and the points for drawing
+    /// it on a map.
+    ///
+    /// See [`Buses::patterns`].
+    pub fn patterns(
+        &self,
+        query: &buses::PatternsQuery,
+    ) -> Result<Vec<buses::Pattern>, Error<H::Error>> {
+        self.client.call(PatternsCall(query))
+    }
+
     /// The languages Bus Tracker accepts, for a query's `locale` method.
     ///
     /// See [`Buses::locales`].
@@ -811,6 +862,7 @@ mod tests {
     const BUS_STOPS: &[u8] = include_bytes!("../tests/fixtures/bus_stops_by_id.json");
     const BUS_VEHICLES: &[u8] = include_bytes!("../tests/fixtures/bus_vehicles_by_id.json");
     const BUS_PREDICTIONS: &[u8] = include_bytes!("../tests/fixtures/bus_predictions_456.json");
+    const BUS_PATTERNS: &[u8] = include_bytes!("../tests/fixtures/bus_patterns_20.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -1111,6 +1163,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn async_bus_patterns() {
+        let http = FakeHttp::ok(BUS_PATTERNS);
+        let patterns = async_bus_client(http.clone())
+            .buses()
+            .patterns(&buses::PatternsQuery::route("20"))
+            .await
+            .unwrap();
+        assert_eq!(patterns.len(), 2);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getpatterns");
+        assert_eq!(url.query(), Some("key=k&rt=20&format=json"));
+    }
+
+    #[tokio::test]
     async fn async_bus_locales() {
         let http = FakeHttp::ok(BUS_LOCALES);
         let locales = async_bus_client(http.clone())
@@ -1248,6 +1314,18 @@ mod tests {
             http.last_url().query(),
             Some("key=k&vid=8864&tmres=s&format=json")
         );
+    }
+
+    #[test]
+    fn blocking_bus_patterns() {
+        let http = FakeHttp::ok(BUS_PATTERNS);
+        let query = buses::PatternsQuery::pattern(buses::PatternId(954));
+        let patterns = blocking_bus_client(http.clone())
+            .buses()
+            .patterns(&query)
+            .unwrap();
+        assert_eq!(patterns[0].id, buses::PatternId(954));
+        assert_eq!(http.last_url().query(), Some("key=k&pid=954&format=json"));
     }
 
     #[test]
