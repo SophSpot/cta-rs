@@ -90,6 +90,7 @@ struct PatternsCall<'a>(&'a buses::PatternsQuery);
 struct DetoursCall<'a>(&'a buses::DetoursQuery);
 struct EnhancedDetoursCall<'a>(&'a buses::EnhancedDetoursQuery);
 struct RouteStatusCall<'a>(&'a alerts::RouteStatusQuery);
+struct DetailedAlertsCall<'a>(&'a alerts::AlertsQuery);
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -230,6 +231,16 @@ impl Endpoint for RouteStatusCall<'_> {
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         alerts::parse_route_status(body)
+    }
+}
+
+impl Endpoint for DetailedAlertsCall<'_> {
+    type Output = Vec<alerts::Alert>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        Ok(alerts::detailed_request(config.alerts(), self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        alerts::parse_detailed(body)
     }
 }
 
@@ -764,6 +775,33 @@ impl<H: AsyncHttpClient> Alerts<'_, H> {
     ) -> Result<Vec<alerts::RouteStatus>, Error<H::Error>> {
         self.client.call(RouteStatusCall(query)).await
     }
+
+    /// Service alerts, with headlines, descriptions, severity, and the routes and
+    /// stations they affect.
+    ///
+    /// Without filters, this includes upcoming alerts as well as active ones. No matching
+    /// alerts is an empty list, not an error.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::alerts::{AlertsQuery, RouteId};
+    /// use cta::trains::Route;
+    ///
+    /// let query = AlertsQuery::routes([RouteId::from(Route::Brown), RouteId::from("22")])?
+    ///     .active_only();
+    /// for a in client.alerts().detailed(&query).await? {
+    ///     println!("[{}] {}", a.severity.score, a.headline);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn detailed(
+        &self,
+        query: &alerts::AlertsQuery,
+    ) -> Result<Vec<alerts::Alert>, Error<H::Error>> {
+        self.client.call(DetailedAlertsCall(query)).await
+    }
 }
 
 #[cfg(feature = "reqwest")]
@@ -999,6 +1037,17 @@ impl<H: BlockingHttpClient> BlockingAlerts<'_, H> {
     ) -> Result<Vec<alerts::RouteStatus>, Error<H::Error>> {
         self.client.call(RouteStatusCall(query))
     }
+
+    /// Service alerts, with headlines, descriptions, severity, and the routes and
+    /// stations they affect.
+    ///
+    /// See [`Alerts::detailed`].
+    pub fn detailed(
+        &self,
+        query: &alerts::AlertsQuery,
+    ) -> Result<Vec<alerts::Alert>, Error<H::Error>> {
+        self.client.call(DetailedAlertsCall(query))
+    }
 }
 
 impl<H: BlockingHttpClient> ClientBuilder<Blocking, H> {
@@ -1051,6 +1100,7 @@ mod tests {
     const BUS_DETOURS: &[u8] = include_bytes!("../tests/fixtures/bus_detours.json");
     const BUS_ENHANCED: &[u8] = include_bytes!("../tests/fixtures/bus_enhanced_detours.json");
     const ALERTS_ROUTES: &[u8] = include_bytes!("../tests/fixtures/alerts_routes.json");
+    const ALERTS_DETAILED: &[u8] = include_bytes!("../tests/fixtures/alerts_alerts.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -1247,6 +1297,33 @@ mod tests {
         assert_eq!(url.host_str(), Some("www.transitchicago.com"));
         assert_eq!(url.path(), "/api/1.0/routes.aspx");
         assert_eq!(url.query(), Some("outputType=JSON"));
+    }
+
+    #[tokio::test]
+    async fn async_alerts_detailed() {
+        let http = FakeHttp::ok(ALERTS_DETAILED);
+        let client = AsyncClient::builder().http(http.clone()).build();
+        let query = alerts::AlertsQuery::station(trains::StationId(40380)).active_only();
+        let alerts = client.alerts().detailed(&query).await.unwrap();
+        assert_eq!(alerts.len(), 53);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/api/1.0/alerts.aspx");
+        assert_eq!(
+            url.query(),
+            Some("stationid=40380&activeonly=true&outputType=JSON")
+        );
+    }
+
+    #[test]
+    fn blocking_alerts_detailed() {
+        let http = FakeHttp::ok(ALERTS_DETAILED);
+        let client = BlockingClient::builder().http(http.clone()).build();
+        let alerts = client
+            .alerts()
+            .detailed(&alerts::AlertsQuery::all())
+            .unwrap();
+        assert!(!alerts.is_empty());
+        assert_eq!(http.last_url().query(), Some("outputType=JSON"));
     }
 
     #[test]

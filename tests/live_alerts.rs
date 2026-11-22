@@ -72,6 +72,81 @@ mod with_reqwest {
     }
 }
 
+#[cfg(feature = "reqwest")]
+mod detailed {
+    use cta::alerts::{AlertsQuery, RouteId, Service, SeverityCategory};
+    use cta::client::AsyncClient;
+    use cta::trains::{Route, StationId};
+
+    fn client() -> AsyncClient<reqwest::Client> {
+        AsyncClient::builder().build()
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
+    async fn every_affected_service_is_classified() {
+        let alerts = client()
+            .alerts()
+            .detailed(&AlertsQuery::all())
+            .await
+            .expect("request should succeed");
+        assert!(!alerts.is_empty());
+        let others: Vec<_> = alerts
+            .iter()
+            .flat_map(|a| &a.services)
+            .filter(|s| matches!(s.service, Service::Other(_)))
+            .collect();
+        assert!(others.is_empty(), "unclassified: {others:?}");
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
+    async fn filters_work() {
+        let alerts = client();
+        let alerts = alerts.alerts();
+        let now = jiff::ZonedDateTime::now();
+        let active = alerts
+            .detailed(&AlertsQuery::all().active_only())
+            .await
+            .expect("request should succeed");
+        for a in &active {
+            assert!(
+                a.start.date() <= now.date(),
+                "{} starts {:?}",
+                a.id,
+                a.start
+            );
+        }
+        let unplanned = alerts
+            .detailed(&AlertsQuery::all().without_planned())
+            .await
+            .expect("request should succeed");
+        assert!(
+            unplanned
+                .iter()
+                .all(|a| a.severity.category != SeverityCategory::Planned),
+            "{unplanned:?}"
+        );
+        let mixed = alerts
+            .detailed(
+                &AlertsQuery::routes([RouteId::from(Route::Brown), RouteId::from("22")]).unwrap(),
+            )
+            .await
+            .expect("mixed train and bus routes work for alerts");
+        let _ = mixed;
+        let station = alerts
+            .detailed(&AlertsQuery::station(StationId(40380)))
+            .await
+            .expect("request should succeed");
+        let _ = station;
+        let none = alerts
+            .detailed(&AlertsQuery::routes(["not-a-route"]).unwrap())
+            .await
+            .expect("no matching alerts is empty, not an error");
+        assert!(none.is_empty());
+    }
+}
+
 #[cfg(feature = "ureq")]
 mod with_ureq {
     use cta::alerts::RouteStatusQuery;

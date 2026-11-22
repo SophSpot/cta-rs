@@ -2,7 +2,7 @@
 
 # cta
 
-A Rust client for the CTA's [Train Tracker](https://www.transitchicago.com/developers/traintracker/) and [Bus Tracker](https://www.transitchicago.com/developers/bustracker/) APIs: live arrival predictions, vehicle locations, routes, stops, and detours for Chicago's 'L' trains and buses.
+A Rust client for the CTA's [Train Tracker](https://www.transitchicago.com/developers/traintracker/), [Bus Tracker](https://www.transitchicago.com/developers/bustracker/), and [Customer Alerts](https://www.transitchicago.com/developers/alerts/) APIs: live arrival predictions, vehicle locations, routes, stops, detours, and service alerts for Chicago's 'L' trains and buses.
 
 - Async (reqwest) and blocking (ureq) clients with the same API
 - Typed results: IDs like `StationId`, `StopId`, and `VehicleId` are distinct types, and times are time-zone-aware
@@ -14,7 +14,9 @@ This crate is not affiliated with or endorsed by the Chicago Transit Authority.
 
 ## Getting API keys
 
-Each API needs its own free key. Apply on the CTA's developer site for [Train Tracker](https://www.transitchicago.com/developers/traintracker/) or [Bus Tracker](https://www.transitchicago.com/developers/bustracker/), then pass the key to the client with `train_key` or `bus_key`. You only need the key for the API you use. The examples below read them from the `CTA_TRAIN_API_KEY` and `CTA_BUS_API_KEY` environment variables.
+Train Tracker and Bus Tracker each need their own free key. Apply on the CTA's developer site for [Train Tracker](https://www.transitchicago.com/developers/traintracker/) or [Bus Tracker](https://www.transitchicago.com/developers/bustracker/), then pass the key to the client with `train_key` or `bus_key`. You only need the key for the API you use. The examples below read them from the `CTA_TRAIN_API_KEY` and `CTA_BUS_API_KEY` environment variables.
+
+Customer Alerts needs no key.
 
 ## Installation
 
@@ -85,6 +87,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Alerts
+
+No key needed:
+
+```rust
+use cta::AsyncClient;
+use cta::alerts::{AlertsQuery, RouteId};
+use cta::trains::Route;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = AsyncClient::builder().build();
+
+    // Active alerts on the Brown Line and route 22
+    let query = AlertsQuery::routes([RouteId::from(Route::Brown), RouteId::from("22")])?
+        .active_only();
+    for a in client.alerts().detailed(&query).await? {
+        println!("[{}] {}", a.severity.score, a.headline);
+    }
+    Ok(())
+}
+```
+
 ### Blocking
 
 ```rust
@@ -105,8 +130,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Keys
 
-Each CTA API has its own key, set on the builder. A client without a key is valid:
-calling an API whose key isn't set returns `Error::MissingKey` without sending a request.
+Train Tracker and Bus Tracker each have their own key, set on the builder with `train_key`
+or `bus_key`. A client without a key is valid: calling an API whose key isn't set returns
+`Error::MissingKey` without sending a request. Customer Alerts needs no key.
 
 ## Endpoints
 
@@ -138,6 +164,31 @@ no locations, more than 4 stations or stops, or `max(0)`.
 
 Station IDs (4xxxx) cover every platform at a station, and stop IDs (3xxxx) are a single platform. Both are listed in the City of Chicago's [L stops dataset](https://data.cityofchicago.org/Transportation/CTA-System-Information-List-of-L-Stops/8pix-ypme).
 
+Bus Tracker methods are on `client.buses()`.
+
+| Method | Query | Returns |
+|---|---|---|
+| `predictions` | `PredictionsQuery::at(stop)`, `::stops([..])?` (with optional `.route(..)`), `::vehicle(..)`, or `::vehicles([..])?`; all with `.top(..)` | Buses coming to up to 10 stops, or the upcoming stops of up to 10 buses |
+| `vehicles` | `VehiclesQuery::at(..)`, `::vehicles([..])?`, `::route(..)`, or `::routes([..])?` | Where buses are |
+| `routes` | `RoutesQuery::all()` | Every route, with its name and color |
+| `directions` | `DirectionsQuery::route(..)` | The directions a route runs in |
+| `stops` | `StopsQuery::route(rt, dir)`, `::at(..)`, or `::stops([..])?` | Stops on a route in one direction, or by ID |
+| `patterns` | `PatternsQuery::route(..)`, `::pattern(..)`, or `::patterns([..])?` | The paths a route takes, with stops in order |
+| `detours` | `DetoursQuery::all()`, `::route(..)`, or `::route_direction(..)` | Current detours |
+| `enhanced_detours` | `EnhancedDetoursQuery::all()` | Detours with trip-level details, for GTFS-Realtime feeds |
+| `locales`, `time` | `LocalesQuery::all()`; none | The languages Bus Tracker accepts, and its clock |
+
+IDs that don't exist, and stops or routes with no service right now, are left out of the results rather than reported as errors: Bus Tracker reports both the same way. Lists of IDs are capped at 10, checked before any request is sent.
+
+Customer Alerts methods are on `client.alerts()`.
+
+| Method | Query | Returns |
+|---|---|---|
+| `route_status` | `RouteStatusQuery::all()`, `::types([..])?`, `::train_routes([..])?`, `::bus_routes([..])?`, or `::station(..)` | The current status of routes, stations, and systemwide groups |
+| `detailed` | `AlertsQuery::all()`, `::routes([..])?`, or `::station(..)`, with `.active_only()`, `.without_planned()`, and more | Service alerts, with severity and the services they affect |
+
+Route status takes train and bus routes separately, because the API drops train routes from a request that mixes them. A station appears once per line serving it, and alerts for a station include alerts for its lines.
+
 ## Errors
 
 Client methods return `cta::Error<E>`, where `E` is the HTTP client's error type:
@@ -153,16 +204,22 @@ match client.trains().follow(&run).await {
 }
 ```
 
-- `Error::MissingKey`: the client has no key for that API. Nothing was sent.
+- `Error::MissingKey`: the client has no key for that API. Nothing was sent. Never returned for Customer Alerts.
 - `Error::Http`: the request failed (connection, timeout, or HTTP status).
-- `Error::Api`: the CTA returned an error code. `kind()` names the common ones, and `code` and `message` are always available.
+- `Error::Api`: the CTA reported an error. `api` says which API, `kind()` names the common ones, and `message` is always available. `code` is set for Train Tracker and Customer Alerts; Bus Tracker errors only have a message. The same code means different things in different APIs, so match on `kind()`.
 - `Error::Decode`: the response couldn't be read.
+
+"Nothing matched" is an empty list, not an error: an unknown bus stop, a route with no buses running, or no current alerts.
 
 ## Times
 
 The CTA reports Chicago local time without an offset. This crate attaches the `America/Chicago` time zone, so times like `arrival_time` are [`jiff::ZonedDateTime`](https://docs.rs/jiff) values. `jiff` is re-exported as `cta::jiff`, so you don't need a separate dependency.
 
 `Arrival::eta()` measures from when the CTA made the prediction to the predicted arrival, using the CTA's own clock, so it doesn't depend on your machine's time.
+
+Bus predictions can be several minutes old by the time you get them, so `Prediction::eta_from(now)` measures from a time you pass in: Bus Tracker's clock (`client.buses().time()`) or a local clock you trust. `Prediction::countdown` is the value CTA's signs show (`Due`, `Minutes(3)`, …), correct as of the response.
+
+Alert start and end times are an `AlertTime`: an exact time when CTA gives one, or just a date when it doesn't.
 
 ## Custom HTTP clients
 
@@ -197,7 +254,7 @@ clients' `Debug` output hides it.
 
 ### Without an HTTP client
 
-The request builders and parsers in `cta::trains` do no I/O. Build the URL, send it however you like, and parse the body:
+The request builders and parsers in `cta::trains`, `cta::buses`, and `cta::alerts` do no I/O. Build the URL, send it however you like, and parse the body:
 
 ```rust
 use cta::Url;
@@ -223,12 +280,14 @@ The [`examples/`](examples) directory has runnable programs:
 | `bus_arrivals` | Upcoming buses at one or more bus stops |
 | `bus_route` | A bus route's stops in order, by direction |
 | `bus_detours` | Current detours, with the stops they add or skip and their patterns |
+| `service_alerts` | What isn't running normally right now, and the alerts behind it (no key needed) |
 
 ```sh
 CTA_TRAIN_API_KEY=... cargo run --example arrivals
 CTA_BUS_API_KEY=... cargo run --example bus_arrivals -- 456
 CTA_BUS_API_KEY=... cargo run --example bus_route -- 20 westbound
 CTA_BUS_API_KEY=... cargo run --example bus_detours
+cargo run --example service_alerts
 cargo run --example custom_http
 ```
 

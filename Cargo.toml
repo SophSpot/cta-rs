@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
-description = "Client for the CTA Train Tracker and Bus Tracker APIs: arrivals, vehicle locations, routes, stops, and detours for Chicago trains and buses"
+description = "Client for the CTA Train Tracker, Bus Tracker, and Customer Alerts APIs: arrivals, vehicle locations, routes, stops, detours, and service alerts for Chicago trains and buses"
 repository = "https://github.com/SophSpot/cta-rs"
 readme = "README.md"
 keywords = ["cta", "chicago", "transit", "train", "bus"]
@@ -62,4 +62,8 @@ required-features = ["reqwest"]
 
 [[example]]
 name = "bus_detours"
+required-features = ["reqwest"]
+
+[[example]]
+name = "service_alerts"
 required-features = ["reqwest"]

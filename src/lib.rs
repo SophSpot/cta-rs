@@ -1,9 +1,11 @@
-//! A client for the CTA's [Train Tracker](https://www.transitchicago.com/developers/traintracker/)
-//! and [Bus Tracker](https://www.transitchicago.com/developers/bustracker/) APIs: live
-//! arrival predictions, vehicle locations, routes, stops, and detours for Chicago's 'L'
-//! trains and buses.
+//! A client for the CTA's [Train Tracker](https://www.transitchicago.com/developers/traintracker/),
+//! [Bus Tracker](https://www.transitchicago.com/developers/bustracker/), and
+//! [Customer Alerts](https://www.transitchicago.com/developers/alerts/) APIs: live arrival
+//! predictions, vehicle locations, routes, stops, detours, and service alerts for
+//! Chicago's 'L' trains and buses.
 //!
-//! You need a free API key from the CTA for each API you use.
+//! Train Tracker and Bus Tracker each need a free API key from the CTA. Customer Alerts
+//! needs none.
 //!
 //! # Quick start (async)
 //!
@@ -40,6 +42,27 @@
 //! let query = PredictionsQuery::at(StopId(456)).route("20");
 //! for p in client.buses().predictions(&query).await? {
 //!     println!("{} to {}: {:?}", p.route, p.destination, p.countdown);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Quick start (alerts)
+//!
+//! No key needed:
+//!
+//! ```no_run
+//! # #[cfg(feature = "reqwest")]
+//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+//! use cta::AsyncClient;
+//! use cta::alerts::RouteStatusQuery;
+//!
+//! let client = AsyncClient::builder().build();
+//!
+//! for s in client.alerts().route_status(&RouteStatusQuery::all()).await? {
+//!     if !s.is_normal() {
+//!         println!("{}: {}", s.name, s.status);
+//!     }
 //! }
 //! # Ok(())
 //! # }
@@ -88,12 +111,23 @@
 //!
 //! See [`buses`] for more, including how detours link to stops and patterns.
 //!
+//! Customer Alerts, on [`AsyncClient::alerts`] and [`BlockingClient::alerts`]:
+//!
+//! | Method | What it returns |
+//! |---|---|
+//! | `route_status` | The current status of bus routes, train lines, stations, and systemwide groups ([`alerts::RouteStatus`]) |
+//! | `detailed` | Service alerts, with severity and the routes and stations they affect ([`alerts::Alert`]) |
+//!
+//! See [`alerts`] for more.
+//!
 //! # Keys
 //!
-//! Each CTA API has its own key, set on the [`ClientBuilder`](client::ClientBuilder) with
+//! Train Tracker and Bus Tracker each have their own key, set on the
+//! [`ClientBuilder`](client::ClientBuilder) with
 //! [`train_key`](client::ClientBuilder::train_key) or
 //! [`bus_key`](client::ClientBuilder::bus_key). A client without a key is valid: calling
 //! an API whose key isn't set returns [`Error::MissingKey`] without sending a request.
+//! Customer Alerts needs no key.
 //!
 //! # Features
 //!
@@ -107,7 +141,7 @@
 //!
 //! # Without an HTTP client
 //!
-//! The request builders and parsers in [`trains`] and [`buses`] (such as
+//! The request builders and parsers in [`trains`], [`buses`], and [`alerts`] (such as
 //! [`trains::arrivals_request`] and [`buses::parse_predictions`]) do no I/O, so you can
 //! send the request however you like and hand the response body to the parser.
 //!
@@ -378,7 +412,8 @@ pub enum ResponseError {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error<E> {
-    /// The client has no key for the API this method calls.
+    /// The client has no key for the API this method calls. Never returned for Customer
+    /// Alerts, which needs no key.
     ///
     /// No request was sent. Set the key on the builder with
     /// [`ClientBuilder::train_key`](client::ClientBuilder::train_key) or

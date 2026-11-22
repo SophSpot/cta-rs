@@ -9,9 +9,43 @@
 //! [`BlockingClient::alerts`](crate::BlockingClient::alerts). The `*_request` and
 //! `parse_*` functions are for sending requests yourself: they build the URL and parse the
 //! response body without doing any I/O.
+//!
+//! # Endpoints
+//!
+//! | Method | What it returns |
+//! |---|---|
+//! | [`route_status`](crate::client::Alerts::route_status) | The current status of bus routes, train lines, stations, and systemwide groups ([`RouteStatus`]) |
+//! | [`detailed`](crate::client::Alerts::detailed) | Service alerts, with severity, times, and the services they affect ([`Alert`]) |
+//!
+//! A status reflects the most severe active alert affecting its service. No matching
+//! routes or alerts is an empty list, not an error.
+//!
+//! # Services
+//!
+//! Statuses and alerts are about a [`Service`]: a bus route, a train line, a train
+//! station, or a systemwide group. These use the same IDs as the other APIs, so a
+//! [`Service::BusRoute`] works with [`buses`] calls and a [`Service::TrainRoute`] or
+//! [`Service::Station`] with [`trains`] calls.
+//!
+//! Systemwide groups ("all routes", "all bus routes", "all train routes") are separate
+//! from the routes they cover: an alert for all bus routes doesn't change each bus route's
+//! status. Whether to show them alongside route statuses is up to you.
+//!
+//! A few things to know about stations:
+//!
+//! - Route status lists a station once for each line serving it;
+//!   [`RouteStatus::line`] says which.
+//! - Alerts for a station ([`AlertsQuery::station`]) also include alerts for every line
+//!   serving it.
+//! - Both endpoints accept only one station per request.
 
+mod detailed;
 mod route_status;
 
+pub use detailed::{
+    AffectedService, Alert, AlertId, AlertTime, AlertsQuery, RouteId, Severity, SeverityBand,
+    SeverityCategory, detailed_request, parse_detailed,
+};
 pub use route_status::{
     RouteStatus, RouteStatusQuery, ServiceKind, parse_route_status, route_status_request,
 };
@@ -99,6 +133,16 @@ impl Systemwide {
             "Systemwide" => Some(Systemwide::AllRoutes),
             "Bus" => Some(Systemwide::AllBusRoutes),
             "Train" => Some(Systemwide::AllTrainRoutes),
+            _ => None,
+        }
+    }
+
+    /// The group named `name`, e.g. `"All Bus Routes"`.
+    fn from_name(name: &str) -> Option<Self> {
+        match name.trim() {
+            n if n.eq_ignore_ascii_case("All Routes") => Some(Systemwide::AllRoutes),
+            n if n.eq_ignore_ascii_case("All Bus Routes") => Some(Systemwide::AllBusRoutes),
+            n if n.eq_ignore_ascii_case("All Train Routes") => Some(Systemwide::AllTrainRoutes),
             _ => None,
         }
     }
