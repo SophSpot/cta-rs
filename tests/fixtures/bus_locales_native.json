@@ -1,0 +1,14 @@
+{
+        "bustime-response": {
+                "locale": [
+                        {
+                                "localestring": "en",
+                                "displayname": "English"
+                        },
+                        {
+                                "localestring": "es",
+                                "displayname": "español"
+                        }
+                ]
+        }
+}

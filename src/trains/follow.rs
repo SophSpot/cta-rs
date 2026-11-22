@@ -87,7 +87,10 @@ mod tests {
         let train = parse_follow(include_bytes!("../../tests/fixtures/follow_125.json")).unwrap();
 
         let p = train.position.unwrap();
-        assert_eq!((p.lat, p.lon, p.heading), (41.90479, -87.66932, 293));
+        assert_eq!(
+            (p.coordinates.lat, p.coordinates.lon, p.heading),
+            (41.90479, -87.66932, 293)
+        );
 
         assert_eq!(train.stops.len(), 3);
         let first = &train.stops[0];

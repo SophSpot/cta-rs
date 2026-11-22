@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let position = t
                 .position
-                .map(|p| format!("({:.4}, {:.4})", p.lat, p.lon))
+                .map(|p| format!("({:.4}, {:.4})", p.coordinates.lat, p.coordinates.lon))
                 .unwrap_or_default();
             println!(
                 "  run {:>4} to {:<16} {status} {:<20} {position}",

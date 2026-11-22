@@ -1,0 +1,118 @@
+{
+	"bustime-response": {
+		"dtrs": [
+			{
+				"id": "83D479F6-CB66-4092-9374-0659F00B1771",
+				"ver": 2,
+				"st": 1,
+				"desc": "050_NB_B594-26REV",
+				"rtdirs": [
+					{
+						"rt": "50",
+						"dir": "Northbound"
+					}
+				],
+				"startdt": "20261116 09:00",
+				"enddt": "20261219 23:50"
+			},
+			{
+				"id": "DCA38E23-3205-400B-9597-783DB6D9A27C",
+				"ver": 4,
+				"st": 1,
+				"desc": "J14_SB_B485-26",
+				"rtdirs": [
+					{
+						"rt": "J14",
+						"dir": "Southbound"
+					}
+				],
+				"startdt": "20261113 09:00",
+				"enddt": "20261219 23:30"
+			},
+			{
+				"id": "8A3D8B0D-D95E-4621-BAF8-E969867256B5",
+				"ver": 3,
+				"st": 1,
+				"desc": "049_SB_B562-26REV",
+				"rtdirs": [
+					{
+						"rt": "49",
+						"dir": "Southbound"
+					}
+				],
+				"startdt": "20261105 10:00",
+				"enddt": "20261219 23:30"
+			},
+			{
+				"id": "5950B28F-2CDB-4242-BDAC-B72BDB28F8F2",
+				"ver": 4,
+				"st": 1,
+				"desc": "X49_SB_B562-26REV",
+				"rtdirs": [
+					{
+						"rt": "X49",
+						"dir": "Southbound"
+					}
+				],
+				"startdt": "20261020 09:00",
+				"enddt": "20261211 17:00"
+			},
+			{
+				"id": "9874495F-F49C-4256-A2B5-29A2FB3D7501",
+				"ver": 2,
+				"st": 1,
+				"desc": "050_SB_B594-26REV",
+				"rtdirs": [
+					{
+						"rt": "50",
+						"dir": "Southbound"
+					}
+				],
+				"startdt": "20261116 09:00",
+				"enddt": "20261219 23:50"
+			},
+			{
+				"id": "94F8F28D-D955-478C-8D84-7C6367C2DC47",
+				"ver": 4,
+				"st": 1,
+				"desc": "015_NB_B485-26",
+				"rtdirs": [
+					{
+						"rt": "15",
+						"dir": "Northbound"
+					}
+				],
+				"startdt": "20261113 09:00",
+				"enddt": "20261219 23:30"
+			},
+			{
+				"id": "86879503-7CEA-48C8-BB29-FFBF0D73B1EA",
+				"ver": 3,
+				"st": 1,
+				"desc": "J14_NB_B485-26",
+				"rtdirs": [
+					{
+						"rt": "J14",
+						"dir": "Northbound"
+					}
+				],
+				"startdt": "20261113 09:00",
+				"enddt": "20261219 23:30"
+			},
+			{
+				"id": "44571A13-A27D-4D89-BC33-820CA94C9F78",
+				"ver": 3,
+				"st": 1,
+				"desc": "015_SB_B485-26",
+				"rtdirs": [
+					{
+						"rt": "15",
+						"dir": "Southbound"
+					}
+				],
+				"startdt": "20261113 09:00",
+				"enddt": "20261219 23:30"
+			}
+		]
+	}
+}

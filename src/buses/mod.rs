@@ -1,0 +1,814 @@
+//! The Bus Tracker API: predictions, bus locations, routes, stops, patterns, and detours
+//! for CTA buses.
+//!
+//! Requests need a Bus Tracker key, set with
+//! [`ClientBuilder::bus_key`](crate::client::ClientBuilder::bus_key). Without one, every
+//! method returns [`Error::MissingKey`](crate::Error::MissingKey).
+//!
+//! Most users call the methods on [`AsyncClient::buses`](crate::AsyncClient::buses) or
+//! [`BlockingClient::buses`](crate::BlockingClient::buses). The `*_request` and `parse_*`
+//! functions are for sending requests yourself: they build the URL and parse the response
+//! body without doing any I/O.
+//!
+//! # Endpoints
+//!
+//! | Method | What it returns |
+//! |---|---|
+//! | [`predictions`](crate::client::Buses::predictions) | Buses coming to up to 10 stops, or the upcoming stops of up to 10 buses ([`Prediction`]) |
+//! | [`vehicles`](crate::client::Buses::vehicles) | Where buses are: up to 10 buses by ID, or every bus on up to 10 routes ([`Vehicle`]) |
+//! | [`routes`](crate::client::Buses::routes) | Every bus route ([`RouteInfo`]) |
+//! | [`directions`](crate::client::Buses::directions) | The directions a route runs in ([`DirectionInfo`]) |
+//! | [`stops`](crate::client::Buses::stops) | Stops on a route in one direction, or up to 10 stops by ID ([`Stop`]) |
+//! | [`patterns`](crate::client::Buses::patterns) | The paths a route takes, with stops in order ([`Pattern`]) |
+//! | [`detours`](crate::client::Buses::detours) | Current detours ([`Detour`]) |
+//! | [`enhanced_detours`](crate::client::Buses::enhanced_detours) | Current and upcoming detours with trip-level details, for GTFS-Realtime feeds ([`DetourSchedule`]) |
+//! | [`locales`](crate::client::Buses::locales) | The languages Bus Tracker accepts ([`LocaleInfo`]) |
+//! | [`time`](crate::client::Buses::time) | Bus Tracker's clock |
+//!
+//! IDs that don't exist, and stops or routes with no service right now, are left out of
+//! the results rather than reported as errors: Bus Tracker reports both the same way.
+//!
+//! # Detours
+//!
+//! A detour temporarily changes where buses on a route go. Detours show up in three
+//! places, linked by the same [`DetourId`]:
+//!
+//! | Call | What it tells you |
+//! |---|---|
+//! | [`detours`](crate::client::Buses::detours) | Which routes and directions are detoured, and when: [`Detour`] |
+//! | [`stops`](crate::client::Buses::stops) | Which stops a detour adds or skips: [`Stop::detours_added`] and [`Stop::detours_removed`] |
+//! | [`patterns`](crate::client::Buses::patterns) | The detoured path, and the path it replaces: [`Pattern::detour`] and [`Pattern::original_points`] |
+//!
+//! Predictions don't say whether a bus is on a detour, but their times already account
+//! for it.
+//!
+//! Detours change during the day. To keep up, fetch `detours` regularly. When a detour
+//! appears, disappears, or gets a new [`version`](Detour::version), fetch the stops and
+//! patterns again for the routes it [`affects`](Detour::affects).
+//!
+//! Canceled detours stay in the list with [`active`](Detour::active) set to `false`,
+//! because a bus may still be running one.
+//!
+//! [`enhanced_detours`](crate::client::Buses::enhanced_detours) gives the same detours,
+//! plus upcoming ones, with trip-level details: the trips and dates affected, each
+//! detoured segment, replaced stops, and delays ([`DetourSchedule`]). It's meant for
+//! building GTFS-Realtime feeds; apps for riders usually only need the calls above.
+//!
+//! ```no_run
+//! # #[cfg(feature = "reqwest")]
+//! # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+//! use cta::buses::{DetoursQuery, PatternsQuery};
+//!
+//! for detour in client.buses().detours(&DetoursQuery::route("49")).await? {
+//!     let patterns = client.buses().patterns(&PatternsQuery::route("49")).await?;
+//!     for p in patterns.iter().filter(|p| p.detour.as_ref() == Some(&detour.id)) {
+//!         println!("{} replaces {} points", p.id, p.original_points.len());
+//!     }
+//! }
+//! # Ok(())
+//! # }
+//! ```
+
+mod detours;
+mod directions;
+mod enhanced_detours;
+mod locales;
+mod patterns;
+mod predictions;
+mod routes;
+mod stops;
+mod time;
+mod vehicles;
+
+pub use detours::{Detour, DetourRoute, DetoursQuery, detours_request, parse_detours};
+pub use directions::{DirectionInfo, DirectionsQuery, directions_request, parse_directions};
+pub use enhanced_detours::{
+    DetourPattern, DetourSchedule, DetourSegment, DetourStop, DetourTrip, EnhancedDetoursQuery,
+    ReplacedStop, enhanced_detours_request, parse_enhanced_detours,
+};
+pub use locales::{LocaleInfo, LocalesQuery, locales_request, parse_locales};
+pub use patterns::{Pattern, PatternPoint, PatternsQuery, parse_patterns, patterns_request};
+pub use predictions::{
+    Countdown, DynamicAction, FlagStop, Prediction, PredictionKind, PredictionsQuery,
+    StopPredictions, VehiclePredictions, parse_predictions, predictions_request,
+};
+pub use routes::{RouteInfo, RoutesQuery, parse_routes, routes_request};
+pub use stops::{Stop, StopsQuery, parse_stops, stops_request};
+pub use time::{parse_time, time_request};
+pub use vehicles::{Vehicle, VehiclesQuery, parse_vehicles, vehicles_request};
+
+use crate::deserializers::one_or_many;
+use crate::{ApiError, DecodeError, ResponseError};
+use jiff::{SignedDuration, ZonedDateTime, civil, tz::TimeZone};
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde_json::{Map, Value};
+use std::fmt::{Display, Formatter};
+use url::Url;
+
+/// The Bus Tracker API's base URL. The clients use this unless given another with
+/// [`ClientBuilder::bus_base_url`](crate::client::ClientBuilder::bus_base_url).
+pub const DEFAULT_BASE_URL: &str = "https://www.ctabustracker.com/bustime/api/v3/";
+
+/// A bus route's code, such as `"20"` (Madison) or `"X9"` (Ashland Express).
+///
+/// This is the `rt` that Bus Tracker calls take and return. List every route with its
+/// name using [`Buses::routes`](crate::client::Buses::routes).
+///
+/// The code is used exactly as given, without checking it. An unknown route gets no
+/// results rather than an error.
+///
+/// ```
+/// use cta::buses::Route;
+///
+/// let route = Route::from("X9");
+/// assert_eq!(route, Route::new("X9"));
+/// assert_eq!(route.as_str(), "X9");
+/// assert_eq!(route.to_string(), "X9");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
+pub struct Route(pub String);
+
+impl Route {
+    /// A route with this code.
+    pub fn new(code: impl Into<String>) -> Self {
+        Route(code.into())
+    }
+
+    /// The route's code, e.g. `"20"`.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for Route {
+    fn from(code: &str) -> Self {
+        Route::new(code)
+    }
+}
+
+impl From<String> for Route {
+    fn from(code: String) -> Self {
+        Route(code)
+    }
+}
+
+impl Display for Route {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // `pad` (not `write_str`) so `{:<4}` / `{:>4}` alignment works in tables
+        f.pad(&self.0)
+    }
+}
+
+/// The direction a route runs in, such as [`Direction::Eastbound`].
+///
+/// List a route's directions with [`Buses::directions`](crate::client::Buses::directions).
+/// Every CTA route uses the four compass directions; [`Other`](Direction::Other) keeps
+/// anything else exactly as Bus Tracker sent it.
+///
+/// Converting from text ignores case, so `"eastbound"` and `"EASTBOUND"` both become
+/// [`Direction::Eastbound`]. Requests always send the form CTA uses, e.g. `"Eastbound"`.
+///
+/// ```
+/// use cta::buses::Direction;
+///
+/// assert_eq!(Direction::from("EASTBOUND"), Direction::Eastbound);
+/// assert_eq!(Direction::Eastbound.as_str(), "Eastbound");
+/// assert_eq!(Direction::from("Clockwise"), Direction::Other("Clockwise".into()));
+/// ```
+///
+/// Build an `Other` with `From` rather than directly: `Direction::Other("Eastbound".into())`
+/// is not equal to [`Direction::Eastbound`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(from = "String", into = "String")
+)]
+#[non_exhaustive]
+pub enum Direction {
+    /// Northbound.
+    Northbound,
+    /// Southbound.
+    Southbound,
+    /// Eastbound.
+    Eastbound,
+    /// Westbound.
+    Westbound,
+    /// A direction other than the four above, as Bus Tracker sent it.
+    Other(String),
+}
+
+impl Direction {
+    /// The text Bus Tracker uses for this direction, e.g. `"Eastbound"`.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Direction::Northbound => "Northbound",
+            Direction::Southbound => "Southbound",
+            Direction::Eastbound => "Eastbound",
+            Direction::Westbound => "Westbound",
+            Direction::Other(s) => s,
+        }
+    }
+
+    /// The named direction matching `s`, ignoring case.
+    fn named(s: &str) -> Option<Self> {
+        [
+            Direction::Northbound,
+            Direction::Southbound,
+            Direction::Eastbound,
+            Direction::Westbound,
+        ]
+        .into_iter()
+        .find(|d| d.as_str().eq_ignore_ascii_case(s))
+    }
+}
+
+impl From<&str> for Direction {
+    fn from(s: &str) -> Self {
+        Direction::named(s).unwrap_or_else(|| Direction::Other(s.to_owned()))
+    }
+}
+
+impl From<String> for Direction {
+    fn from(s: String) -> Self {
+        Direction::named(&s).unwrap_or(Direction::Other(s))
+    }
+}
+
+impl From<Direction> for String {
+    fn from(d: Direction) -> Self {
+        match d {
+            Direction::Other(s) => s,
+            named => named.as_str().to_owned(),
+        }
+    }
+}
+
+impl Display for Direction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.pad(self.as_str())
+    }
+}
+
+/// A Bus Tracker language code, such as `"en"` or `"es"`.
+///
+/// Pass it to a query's `locale` method. List the codes Bus Tracker accepts with
+/// [`Buses::locales`](crate::client::Buses::locales).
+///
+/// CTA lists Spanish, but its route, direction, and stop text is English in every
+/// locale today. Only the language names from `locales` are translated. Bus Tracker
+/// uses its default language for a code it doesn't support, without saying so.
+///
+/// ```
+/// use cta::buses::Locale;
+///
+/// assert_eq!(Locale::from("es").as_str(), "es");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
+pub struct Locale(pub String);
+
+impl Locale {
+    /// A locale with this code.
+    pub fn new(code: impl Into<String>) -> Self {
+        Locale(code.into())
+    }
+
+    /// The locale's code, e.g. `"es"`.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for Locale {
+    fn from(code: &str) -> Self {
+        Locale::new(code)
+    }
+}
+
+impl From<String> for Locale {
+    fn from(code: String) -> Self {
+        Locale(code)
+    }
+}
+
+impl Display for Locale {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.pad(&self.0)
+    }
+}
+
+/// A bus stop ID (`stpid`), such as `456` for Madison & Jefferson.
+///
+/// Bus stop IDs are a different set from Train Tracker's
+/// [`trains::StopId`](crate::trains::StopId).
+///
+/// ```
+/// use cta::buses::StopId;
+///
+/// assert_eq!(StopId(456).to_string(), "456");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct StopId(pub u32);
+
+impl Display for StopId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+/// A bus's ID (`vid`): the fleet number painted on the bus, such as `8932`.
+///
+/// ```
+/// use cta::buses::VehicleId;
+///
+/// assert_eq!(VehicleId(8932).to_string(), "8932");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct VehicleId(pub u32);
+
+impl Display for VehicleId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+/// A pattern's ID (`pid`): one specific path a route takes, such as a short-turn or a
+/// detour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PatternId(pub u32);
+
+impl Display for PatternId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+/// How full a bus is, as reported by Bus Tracker.
+///
+/// CTA doesn't report crowding today, so this is always [`Unknown`](Self::Unknown).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum PassengerLoad {
+    /// The bus is nearly empty.
+    Empty,
+    /// The bus is about half full.
+    HalfEmpty,
+    /// The bus is full.
+    Full,
+    /// Bus Tracker doesn't know, or didn't say.
+    Unknown,
+}
+
+impl PassengerLoad {
+    /// Bus Tracker's `psgld` value: `"EMPTY"`, `"HALF_EMPTY"`, `"FULL"`, `"N/A"`, or `""`.
+    /// Anything unrecognized is `Unknown`.
+    fn from_cta(s: &str) -> Self {
+        match s.trim().to_ascii_uppercase().as_str() {
+            "EMPTY" => PassengerLoad::Empty,
+            "HALF_EMPTY" => PassengerLoad::HalfEmpty,
+            "FULL" => PassengerLoad::Full,
+            _ => PassengerLoad::Unknown,
+        }
+    }
+}
+
+/// A trip's scheduled start: `seconds` after the start of `date`'s service day.
+///
+/// Transit schedules measure from noon minus 12 hours (midnight, except on days the
+/// clocks change) and can run past 24 hours for trips after midnight, so the seconds
+/// are added as elapsed time rather than read as a clock time.
+fn scheduled_start(
+    date: civil::Date,
+    seconds: u32,
+    tz: &TimeZone,
+) -> Result<ZonedDateTime, DecodeError> {
+    let noon = date.at(12, 0, 0, 0).to_zoned_datetime(tz.clone())?;
+    let offset = SignedDuration::from_secs(i64::from(seconds)) - SignedDuration::from_hours(12);
+    Ok(noon.checked_add(offset)?)
+}
+
+/// A detour's ID, such as `"8A3D8B0D-D95E-4621-BAF8-E969867256B5"`.
+///
+/// Stops list the detours that add or remove them, and the same ID identifies the
+/// detour elsewhere in Bus Tracker. The ID is kept exactly as Bus Tracker sent it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
+pub struct DetourId(pub String);
+
+impl DetourId {
+    /// A detour ID with this text.
+    pub fn new(id: impl Into<String>) -> Self {
+        DetourId(id.into())
+    }
+
+    /// The ID's text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for DetourId {
+    fn from(id: &str) -> Self {
+        DetourId::new(id)
+    }
+}
+
+impl From<String> for DetourId {
+    fn from(id: String) -> Self {
+        DetourId(id)
+    }
+}
+
+impl Display for DetourId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.pad(&self.0)
+    }
+}
+
+/// A query Bus Tracker would reject, caught before any request is sent.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum QueryError {
+    /// A stops query was given no stop IDs.
+    #[error("a stops query needs at least one stop ID")]
+    NoStops,
+    /// More stop IDs than Bus Tracker accepts in one request.
+    #[error("too many stops: {0} (Bus Tracker accepts at most 10)")]
+    TooManyStops(usize),
+    /// A vehicles query was given no vehicle IDs.
+    #[error("a vehicles query needs at least one vehicle ID")]
+    NoVehicles,
+    /// More vehicle IDs than Bus Tracker accepts in one request.
+    #[error("too many vehicles: {0} (Bus Tracker accepts at most 10)")]
+    TooManyVehicles(usize),
+    /// A query was given an empty list of routes.
+    #[error("a query by route needs at least one route")]
+    NoRoutes,
+    /// More routes than Bus Tracker accepts in one request.
+    #[error("too many routes: {0} (Bus Tracker accepts at most 10)")]
+    TooManyRoutes(usize),
+    /// A patterns query was given no pattern IDs.
+    #[error("a patterns query needs at least one pattern ID")]
+    NoPatterns,
+    /// More pattern IDs than Bus Tracker accepts in one request.
+    #[error("too many patterns: {0} (Bus Tracker accepts at most 10)")]
+    TooManyPatterns(usize),
+}
+
+/// Remove duplicates, keeping the first occurrence.
+fn dedup<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut out = Vec::new();
+    for item in items {
+        if !out.contains(&item) {
+            out.push(item);
+        }
+    }
+    out
+}
+
+/// Join IDs with commas, e.g. `456,4727`.
+fn join<T: Display>(items: &[T]) -> String {
+    items
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Add `locale=<code>` to `url` if a locale was chosen.
+fn append_locale(url: &mut Url, locale: Option<&Locale>) {
+    if let Some(locale) = locale {
+        url.query_pairs_mut().append_pair("locale", locale.as_str());
+    }
+}
+
+#[derive(Deserialize)]
+struct RawResponse {
+    #[serde(rename = "bustime-response")]
+    response: Map<String, Value>,
+}
+
+/// One entry in a response's `error` array.
+#[derive(Deserialize)]
+struct RawError {
+    msg: String,
+    /// The parameter the error is about, e.g. `{"stpid": "456"}`. Empty for errors
+    /// about the whole request, such as an invalid key.
+    #[serde(flatten)]
+    context: Map<String, Value>,
+}
+
+/// Parse a `bustime-response` body into `T`.
+///
+/// - An error about the whole request (one with only `msg`) is returned as an
+///   [`ApiError`], even if the response also has results.
+/// - Errors about one requested ID (`stpid`, `vid`, `rt`, `pid`, ...) are skipped: that ID
+///   has no results. Bus Tracker reports unknown IDs and IDs with no service the same way.
+/// - The errors are checked before `T` is parsed, so an error response without results
+///   is an [`ApiError`], not a [`DecodeError`].
+pub(crate) fn parse_envelope<T: DeserializeOwned>(body: &[u8]) -> Result<T, ResponseError> {
+    let mut response = serde_json::from_slice::<RawResponse>(body)
+        .map_err(DecodeError::from)?
+        .response;
+
+    if let Some(errors) = response.remove("error") {
+        let errors: Vec<RawError> = one_or_many(errors).map_err(DecodeError::from)?;
+        if let Some(e) = errors.into_iter().find(|e| e.context.is_empty()) {
+            return Err(ApiError::bus(e.msg).into());
+        }
+    }
+
+    Ok(serde_json::from_value(Value::Object(response)).map_err(DecodeError::from)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Api, ApiErrorKind};
+
+    /// A stand-in for an endpoint's results.
+    #[derive(Debug, Deserialize)]
+    struct Prds {
+        #[serde(default)]
+        prd: Vec<Value>,
+    }
+
+    /// A stand-in for an endpoint with a required field, like `gettime`'s `tm`.
+    #[derive(Debug, Deserialize)]
+    struct Time {
+        #[allow(dead_code)]
+        tm: String,
+    }
+
+    const BAD_KEY: &[u8] =
+        br#"{"bustime-response": {"error": [{"msg": "Invalid API access key supplied"}]}}"#;
+
+    #[test]
+    fn route_conversions_agree() {
+        let from_str = Route::from("X9");
+        assert_eq!(from_str, Route::from(String::from("X9")));
+        assert_eq!(from_str, Route::new("X9"));
+        assert_eq!(from_str, Route("X9".into()));
+    }
+
+    #[test]
+    fn route_is_kept_as_given() {
+        assert_eq!(Route::from(" x9 ").as_str(), " x9 ");
+    }
+
+    #[test]
+    fn route_display_supports_padding() {
+        assert_eq!(format!("[{:<4}]", Route::from("20")), "[20  ]");
+    }
+
+    #[test]
+    fn direction_parsing_ignores_case() {
+        for s in ["Eastbound", "eastbound", "EASTBOUND", "eAsTbOuNd"] {
+            assert_eq!(Direction::from(s), Direction::Eastbound, "{s}");
+            assert_eq!(Direction::from(s.to_owned()), Direction::Eastbound, "{s}");
+        }
+        assert_eq!(Direction::from("Northbound"), Direction::Northbound);
+        assert_eq!(Direction::from("Southbound"), Direction::Southbound);
+        assert_eq!(Direction::from("Westbound"), Direction::Westbound);
+    }
+
+    #[test]
+    fn direction_other_is_kept_as_given() {
+        for s in ["Clockwise", " Eastbound", "East", ""] {
+            let d = Direction::from(s);
+            assert_eq!(d, Direction::Other(s.into()), "{s:?}");
+            assert_eq!(d.as_str(), s);
+            assert_eq!(d.to_string(), s);
+        }
+    }
+
+    #[test]
+    fn direction_sends_canonical_text() {
+        assert_eq!(Direction::from("EASTBOUND").as_str(), "Eastbound");
+        assert_eq!(Direction::Westbound.to_string(), "Westbound");
+        assert_eq!(String::from(Direction::from("eastbound")), "Eastbound");
+        assert_eq!(String::from(Direction::from("Clockwise")), "Clockwise");
+    }
+
+    #[test]
+    fn locale_conversions_agree() {
+        assert_eq!(Locale::from("es"), Locale::new("es"));
+        assert_eq!(Locale::from(String::from("es")), Locale("es".into()));
+        assert_eq!(Locale::from("es").to_string(), "es");
+    }
+
+    #[test]
+    fn ids_display_as_given() {
+        assert_eq!(StopId(456).to_string(), "456");
+        let id = "8A3D8B0D-D95E-4621-BAF8-E969867256B5";
+        assert_eq!(DetourId::from(id).as_str(), id);
+        assert_eq!(DetourId::from(id).to_string(), id);
+        assert_eq!(DetourId::from(id), DetourId::new(String::from(id)));
+    }
+
+    #[test]
+    fn passenger_load_from_cta() {
+        assert_eq!(PassengerLoad::from_cta("EMPTY"), PassengerLoad::Empty);
+        assert_eq!(
+            PassengerLoad::from_cta("HALF_EMPTY"),
+            PassengerLoad::HalfEmpty
+        );
+        assert_eq!(PassengerLoad::from_cta("full"), PassengerLoad::Full);
+        for s in ["N/A", "", "  ", "CRUSHED"] {
+            assert_eq!(PassengerLoad::from_cta(s), PassengerLoad::Unknown, "{s:?}");
+        }
+    }
+
+    fn chicago_time(date: civil::Date, h: i8, m: i8, s: i8) -> ZonedDateTime {
+        date.at(h, m, s, 0)
+            .to_zoned_datetime(crate::chicago().unwrap())
+            .unwrap()
+    }
+
+    #[test]
+    fn scheduled_start_adds_seconds_to_the_service_day() {
+        let tz = crate::chicago().unwrap();
+        let day = civil::date(2026, 11, 22);
+        assert_eq!(
+            scheduled_start(day, 45810, &tz).unwrap(),
+            chicago_time(day, 12, 43, 30)
+        );
+        // Trips after midnight belong to the previous service day.
+        assert_eq!(
+            scheduled_start(day, 25 * 3600, &tz).unwrap(),
+            chicago_time(civil::date(2026, 11, 23), 1, 0, 0)
+        );
+    }
+
+    #[test]
+    fn scheduled_start_on_clock_change_days() {
+        // Measured from noon minus 12 hours, so daytime trips keep their clock times.
+        let tz = crate::chicago().unwrap();
+        for day in [civil::date(2026, 3, 8), civil::date(2026, 11, 1)] {
+            assert_eq!(
+                scheduled_start(day, 10 * 3600, &tz).unwrap(),
+                chicago_time(day, 10, 0, 0),
+                "{day}"
+            );
+        }
+    }
+
+    #[test]
+    fn dedup_keeps_first_and_join_uses_commas() {
+        assert_eq!(dedup([3, 1, 3, 2, 1]), [3, 1, 2]);
+        assert_eq!(join(&[StopId(456), StopId(4727)]), "456,4727");
+        assert_eq!(join::<StopId>(&[]), "");
+    }
+
+    #[test]
+    fn append_locale_only_when_set() {
+        let mut url = Url::parse("https://example.com/x?key=k").unwrap();
+        append_locale(&mut url, None);
+        assert_eq!(url.query(), Some("key=k"));
+        append_locale(&mut url, Some(&Locale::from("es")));
+        assert_eq!(url.query(), Some("key=k&locale=es"));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn direction_serializes_as_plain_string() {
+        assert_eq!(
+            serde_json::to_string(&Direction::Eastbound).unwrap(),
+            r#""Eastbound""#
+        );
+        assert_eq!(
+            serde_json::from_str::<Direction>(r#""EASTBOUND""#).unwrap(),
+            Direction::Eastbound
+        );
+        assert_eq!(
+            serde_json::from_str::<Direction>(r#""Clockwise""#).unwrap(),
+            Direction::Other("Clockwise".into())
+        );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn route_serializes_as_plain_string() {
+        assert_eq!(
+            serde_json::to_string(&Route::from("X9")).unwrap(),
+            r#""X9""#
+        );
+        assert_eq!(
+            serde_json::from_str::<Route>(r#""X9""#).unwrap(),
+            Route::from("X9")
+        );
+    }
+
+    #[test]
+    fn request_error_becomes_api_error() {
+        match parse_envelope::<Prds>(BAD_KEY) {
+            Err(ResponseError::Api(e)) => {
+                assert_eq!(e.api, Api::Bus);
+                assert_eq!(e.code, None);
+                assert_eq!(e.kind(), ApiErrorKind::InvalidKey);
+                assert_eq!(e.message, "Invalid API access key supplied");
+            }
+            other => panic!("expected ApiError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn request_error_wins_over_missing_required_fields() {
+        assert!(matches!(
+            parse_envelope::<Time>(BAD_KEY),
+            Err(ResponseError::Api(e)) if e.kind() == ApiErrorKind::InvalidKey
+        ));
+    }
+
+    #[test]
+    fn per_id_errors_are_skipped() {
+        let body = br#"{"bustime-response": {
+            "prd": [{"stpid": "456"}, {"stpid": "456"}],
+            "error": [{"stpid": "sad", "msg": "No data found for parameter"}]
+        }}"#;
+        assert_eq!(parse_envelope::<Prds>(body).unwrap().prd.len(), 2);
+    }
+
+    #[test]
+    fn only_per_id_errors_is_empty() {
+        let body = br#"{"bustime-response": {
+            "error": [{"stpid": "99999999", "msg": "No data found for parameter"}]
+        }}"#;
+        assert!(parse_envelope::<Prds>(body).unwrap().prd.is_empty());
+    }
+
+    #[test]
+    fn request_error_wins_over_results_and_per_id_errors() {
+        let body = br#"{"bustime-response": {
+            "prd": [{"stpid": "456"}],
+            "error": [
+                {"stpid": "sad", "msg": "No data found for parameter"},
+                {"msg": "Internal server error - Unable to complete request at this time"}
+            ]
+        }}"#;
+        assert!(matches!(
+            parse_envelope::<Prds>(body),
+            Err(ResponseError::Api(e)) if e.kind() == ApiErrorKind::ServerError
+        ));
+    }
+
+    #[test]
+    fn single_error_object_is_accepted() {
+        let body =
+            br#"{"bustime-response": {"error": {"msg": "Invalid API access key supplied"}}}"#;
+        assert!(matches!(
+            parse_envelope::<Prds>(body),
+            Err(ResponseError::Api(e)) if e.kind() == ApiErrorKind::InvalidKey
+        ));
+    }
+
+    #[test]
+    fn empty_response_is_empty() {
+        let body = br#"{"bustime-response": {}}"#;
+        assert!(parse_envelope::<Prds>(body).unwrap().prd.is_empty());
+    }
+
+    #[test]
+    fn garbage_is_decode_error() {
+        for body in [
+            &b"not json"[..],
+            b"{}",
+            br#"{"ctatt": {"errCd": "0"}}"#,
+            b"<html>oops</html>",
+        ] {
+            assert!(
+                matches!(parse_envelope::<Prds>(body), Err(ResponseError::Decode(_))),
+                "{}",
+                String::from_utf8_lossy(body)
+            );
+        }
+    }
+
+    #[test]
+    fn error_without_msg_is_decode_error() {
+        let body = br#"{"bustime-response": {"error": [{"stpid": "456"}]}}"#;
+        assert!(matches!(
+            parse_envelope::<Prds>(body),
+            Err(ResponseError::Decode(_))
+        ));
+    }
+}

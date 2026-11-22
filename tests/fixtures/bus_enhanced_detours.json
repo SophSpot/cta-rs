@@ -1,0 +1,536 @@
+{
+  "bustime-response": {
+    "dtrs": [
+      {
+        "id": "9874495F-F49C-4256-A2B5-29A2FB3D7501",
+        "ver": 2,
+        "st": 1,
+        "desc": "050_SB_B594-26REV",
+        "rtdirs": [
+          {
+            "rt": "50",
+            "dir": "Southbound"
+          }
+        ],
+        "startdt": 1794841200000,
+        "enddt": 1797745800000,
+        "moddt": 1794598299000,
+        "ptrs": [
+          {
+            "origpid": 1151,
+            "dtrpid": 502480,
+            "encpl": "_kg_Gv}avO???m@hMiB@N??AOVEBr@?~@@nA?ZbDC?J???KpFE?H???IdHI?L?A?KtJG?J???K`JK?L???M`@AAhBDrII???DtL?\\?@BxI@r@??J??^DvK?d@@hA?nAx@A?T?A?SbEE@JA??KjDE~EDH@?AhEMfDD@???lBO|J?@???fKO`@A?AnC?b@A??`BKjG?F???fBKxF@F???xIOND?@`AMhH@H???`AKdH?H???|AKxJCZB??hFU?F???GpJI?P???QlJG?N?@?QdJI?N?A?MrJG?J???KpJKA???~JIA???~IIGP??FQ`JK?N???OlJK?N@AAMlJK@N??AOrJG?H?A?G~@CzAH^LjDRfDBrDYvHI~Ik@`D?NB??~CQdMET@??fDSzF?H?@?zAMbCC~@HJA@@|AOdEBL@??v@IfFBH?A?~LON???fHOrCBTA?@JMxPO?T???UdLI?N???OxKGZF??jGEXJ?@^MzEIrDBN???bGKJC??dIOb@D??~AOzF?P?A?hJO?H???IjJMCT?ABSjPM?H?A?G`LK`EDX???rHM`@A?AjJEHF?AbNQB???pFAbAD??~HQ^A?@lEFF???~FMH@?AjAKtCAR???LJ`EGt@K?L???MbAFdJOzEDX???AIzJK?@??hLYvWGbBIT???hBEJC?@lCMnE?NB??h@HfEGXA??~ISdAD`@E??rIIVA??|LCT???pVWd@A??jDB`Oc@nIAvGJbTQZC??zKM`@A??^HbGnLCB??BCTf@FfK?rAnA?CP??BQlADr@hA@@??`AvAT\\",
+            "trips": [
+              {
+                "tripid": 49273070,
+                "tatripid": "188",
+                "origtatripno": "280436293",
+                "dates": [
+                  "20261128",
+                  "20261205",
+                  "20261212",
+                  "20261219"
+                ],
+                "stst": 49380
+              },
+              {
+                "tripid": 10322070,
+                "tatripid": "188",
+                "origtatripno": "280436281",
+                "dates": [
+                  "20261128",
+                  "20261205",
+                  "20261212",
+                  "20261219"
+                ],
+                "stst": 42960
+              },
+              {
+                "tripid": 14330070,
+                "tatripid": "51",
+                "origtatripno": "280436303",
+                "dates": [
+                  "20261128",
+                  "20261205",
+                  "20261212",
+                  "20261219"
+                ],
+                "stst": 68940
+              }
+            ],
+            "modifications": [
+              {
+                "dtrstartstop": {
+                  "geoid": 8623,
+                  "stpid": "8862",
+                  "stpnm": "Damen & Hubbard",
+                  "seq": 54
+                },
+                "dtrendstop": {
+                  "geoid": 8623,
+                  "stpid": "8862",
+                  "stpnm": "Damen & Hubbard",
+                  "seq": 54
+                },
+                "repstops": [],
+                "delay": 0
+              },
+              {
+                "dtrstartstop": {
+                  "geoid": 8625,
+                  "stpid": "8864",
+                  "stpnm": "Damen & Fulton",
+                  "seq": 56
+                },
+                "dtrendstop": {
+                  "geoid": 8625,
+                  "stpid": "8864",
+                  "stpnm": "Damen & Fulton",
+                  "seq": 56
+                },
+                "repstops": [],
+                "delay": 0
+              },
+              {
+                "dtrstartstop": {
+                  "geoid": 8636,
+                  "stpid": "8876",
+                  "stpnm": "Damen & Taylor",
+                  "seq": 67
+                },
+                "dtrendstop": {
+                  "geoid": 8636,
+                  "stpid": "8876",
+                  "stpnm": "Damen & Taylor",
+                  "seq": 67
+                },
+                "repstops": [],
+                "delay": 0
+              },
+              {
+                "dtrstartstop": {
+                  "geoid": 8639,
+                  "stpid": "8881",
+                  "stpnm": "Damen & Hastings",
+                  "seq": 70
+                },
+                "dtrendstop": {
+                  "geoid": 8640,
+                  "stpid": "8882",
+                  "stpnm": "Damen & 14th Street",
+                  "seq": 71
+                },
+                "repstops": [],
+                "delay": 0
+              },
+              {
+                "dtrstartstop": {
+                  "geoid": 8648,
+                  "stpid": "8890",
+                  "stpnm": "Damen & Coulter",
+                  "seq": 78
+                },
+                "dtrendstop": {
+                  "geoid": 8648,
+                  "stpid": "8890",
+                  "stpnm": "Damen & Coulter",
+                  "seq": 78
+                },
+                "repstops": [],
+                "delay": 0
+              },
+              {
+                "dtrstartstop": {
+                  "geoid": 8650,
+                  "stpid": "8755",
+                  "stpnm": "2501 S Damen",
+                  "seq": 80
+                },
+                "dtrendstop": {
+                  "geoid": 8650,
+                  "stpid": "8755",
+                  "stpnm": "2501 S Damen",
+                  "seq": 80
+                },
+                "repstops": [],
+                "delay": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "8A3D8B0D-D95E-4621-BAF8-E969867256B5",
+        "ver": 3,
+        "st": 1,
+        "desc": "049_SB_B562-26REV",
+        "rtdirs": [
+          {
+            "rt": "49",
+            "dir": "Southbound"
+          }
+        ],
+        "startdt": 1793894400000,
+        "enddt": 1797744600000,
+        "moddt": 1793907855000,
+        "ptrs": [
+          {
+            "origpid": 1178,
+            "dtrpid": 502468,
+            "encpl": "s|e_G|zevO??Bu@pEK?P???QpJK@R??ASfNS@T??AUd][?R???SpJI?N???OdHI?N???O~KM?N???ObHG?P???QrUU?N@?AOlLM?R???SxLI?L?@?OlQM?H?@?KhY]?P?A?OrTQ?N???OtVS?N???O~FE?P?A?Ope@W?L???M~HI?L?A?KtEI?P???QdWY?J???K`IO?P???QtIG?L???MhX[?N???OjJE?J@@AMjNO?N???OnTO?N?A?M`JK?P@?AQjJG?N???OrUO?J???K|GK@P??AQhMI@L?@AOjJICP??BQhGE?L???M|LO?P???QzQKAqAPA?@Q?I}MP???Q?GqKH???I?IiNJ??AK@GgND???E??a@`RO?H?A?GrHE?AhII?J???K`HG?fB@x@?lA@j@?R@bB?x@@Z?nB@L?dBBlE?v@BjF?t@@j@?zABdD?tB@xB?h@@D?tA@ZzCK?T???UlGE?R???SdOM?R???SrEA?T?A?SvIC?R?A?QxJO?N???O~OM?N?A?MdJG?L???MzPQ?N?A?MvIODGnJE?X@?AYxUU?X?A?W~LQ@^??A_@`NKG^??F_@zOO?^???_@tRQC^@@@a@nJCNL~HG@N??AOzIW~IE?J?A?InMO?L???MdA@lNsBlHQnA?~@LAJ??@KdD`AnBTjB@^KzHG@R??ASh^_@?T???UtPMAZ??@[|SU?V@?AWfTQ?V???WjXS?V?A?UbSQ@Z??A[bQO?qBV?b@d@r@HV???`@i@vAFF~AbRU@T??AUxUQ?V?@?YfMITLrFE@L??AMzXW?L???MxVS?L?@?O|QS?P???QbMG?L???MrJI?J?@?MrVS?J???KnFI@N??AO|LI?L???MnRQXN?A?MpUU?R???SlXU?R???S~KK?N?@?Q|RO@N??AOxHG?N???OtJKJMtEABaC?_@??F]PDDT?n@?p@",
+            "trips": [
+              {
+                "tripid": 6079070,
+                "tatripid": "1036202",
+                "origtatripno": "280435789",
+                "dates": [
+                  "20261128",
+                  "20261205",
+                  "20261212",
+                  "20261219"
+                ],
+                "stst": 41400
+              },
+              {
+                "tripid": 43751070,
+                "tatripid": "1036412",
+                "origtatripno": "280435953",
+                "dates": [
+                  "20261128",
+                  "20261205",
+                  "20261212",
+                  "20261219"
+                ],
+                "stst": 72720
+              },
+              {
+                "tripid": 30019020,
+                "tatripid": "4949104",
+                "origtatripno": "280476515",
+                "dates": [
+                  "20261123",
+                  "20261124",
+                  "20261125",
+                  "20261127",
+                  "20261130",
+                  "20261201",
+                  "20261202",
+                  "20261203",
+                  "20261204",
+                  "20261207",
+                  "20261208",
+                  "20261209",
+                  "20261210",
+                  "20261211",
+                  "20261214",
+                  "20261215",
+                  "20261216",
+                  "20261217",
+                  "20261218"
+                ],
+                "stst": 69060
+              }
+            ],
+            "modifications": [
+              {
+                "dtrstartstop": {
+                  "geoid": 6677,
+                  "stpid": "8228",
+                  "stpnm": "Western & Grand",
+                  "seq": 36
+                },
+                "dtrendstop": {
+                  "geoid": 20399,
+                  "stpid": "8231",
+                  "stpnm": "Western & Lake",
+                  "seq": 39
+                },
+                "repstops": [
+                  {
+                    "geoid": 27167,
+                    "stpid": "18645",
+                    "stpnm": "Grand & Western (Metra MD-N/MD-W/NCS)",
+                    "seq": 36,
+                    "lat": 41.890572000001235,
+                    "lon": -87.68635199999918,
+                    "adhoc": false,
+                    "relpasstime": 92
+                  },
+                  {
+                    "geoid": 27168,
+                    "stpid": "18646",
+                    "stpnm": "Grand & Oakley",
+                    "seq": 37,
+                    "lat": 41.890620000001,
+                    "lon": -87.68396799999996,
+                    "adhoc": false,
+                    "relpasstime": 35
+                  },
+                  {
+                    "geoid": 649,
+                    "stpid": "723",
+                    "stpnm": "Grand & Leavitt",
+                    "seq": 38,
+                    "lat": 41.89069899999903,
+                    "lon": -87.68196199999893,
+                    "adhoc": false,
+                    "relpasstime": 36
+                  },
+                  {
+                    "geoid": 650,
+                    "stpid": "724",
+                    "stpnm": "Grand & Hoyne",
+                    "seq": 39,
+                    "lat": 41.89073800000065,
+                    "lon": -87.67950600000127,
+                    "adhoc": false,
+                    "relpasstime": 48
+                  },
+                  {
+                    "geoid": 651,
+                    "stpid": "725",
+                    "stpnm": "Grand & Damen",
+                    "seq": 40,
+                    "lat": 41.890808999999294,
+                    "lon": -87.6770689999995,
+                    "adhoc": false,
+                    "relpasstime": 44
+                  },
+                  {
+                    "geoid": 8624,
+                    "stpid": "8863",
+                    "stpnm": "Damen & Carroll",
+                    "seq": 41,
+                    "lat": 41.887789999999384,
+                    "lon": -87.67686699999835,
+                    "adhoc": false,
+                    "relpasstime": 68
+                  },
+                  {
+                    "geoid": 22199,
+                    "stpid": "14962",
+                    "stpnm": "Damen & Lake (Green Line)",
+                    "seq": 42,
+                    "lat": 41.88460299999882,
+                    "lon": -87.67678799999916,
+                    "adhoc": false,
+                    "relpasstime": 100
+                  }
+                ],
+                "delay": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "5950B28F-2CDB-4242-BDAC-B72BDB28F8F2",
+        "ver": 4,
+        "st": 1,
+        "desc": "X49_SB_B562-26REV",
+        "rtdirs": [
+          {
+            "rt": "X49",
+            "dir": "Southbound"
+          }
+        ],
+        "startdt": 1792504800000,
+        "enddt": 1797030000000,
+        "moddt": 1792533228000,
+        "ptrs": [
+          {
+            "origpid": 7871,
+            "dtrpid": 502458,
+            "encpl": "s|e_G|zevO???m@HK|PS@R??ASll@o@?R???SpJI?N???Oh^_@?P???Qzp@m@?L?@?Ovk@k@?P?A?Ohl@e@?N???Opm@]?L???Mzg@m@?J???Klx@y@?J@@AMzc@_@?N?A?M`l@c@?J???K|i@e@?L???Mx_@[AqAPA?@Q?c@cz@t[U?AjRQ?fB@x@?lA@j@?R@bB?x@@Z?nB@L?dBBlE?v@BjF?t@@j@?zABdD?tB@xB?h@@D?tA@ZhLQ?R???SxUO?T?A?SvIC?R?A?QxJO?N???O`m@g@?N?A?MvIODGha@[?X?A?WtMSjMIG^??F_@zOO?^???_@d^UNL~HG@N??AOzIW`ZQjAItLkBlHQnA?jAPxC|@nBTjB@^KzHG@R??ASh^_@?T???Uzz@u@?V???Wnl@e@@Z??A[bQO?qBV?b@d@r@HV???`@i@vAFF~AbRU@T??AUhb@[v@?TLrFE@L??AMtp@k@?L?@?Otk@e@?J?@?M`l@g@?L???MnRQXN?A?M~{@w@?N?@?Qlh@c@JMvEE?mDFSXJ@PAr@?p@",
+            "trips": [
+              {
+                "tripid": 37068020,
+                "tatripid": "49499031",
+                "origtatripno": "280488161",
+                "dates": [
+                  "20261123",
+                  "20261124",
+                  "20261125",
+                  "20261127",
+                  "20261130",
+                  "20261201",
+                  "20261202",
+                  "20261203",
+                  "20261204",
+                  "20261207",
+                  "20261208",
+                  "20261209",
+                  "20261210",
+                  "20261211"
+                ],
+                "stst": 56100
+              },
+              {
+                "tripid": 8281020,
+                "tatripid": "49499040",
+                "origtatripno": "280488170",
+                "dates": [
+                  "20261123",
+                  "20261124",
+                  "20261125",
+                  "20261127",
+                  "20261130",
+                  "20261201",
+                  "20261202",
+                  "20261203",
+                  "20261204",
+                  "20261207",
+                  "20261208",
+                  "20261209",
+                  "20261210",
+                  "20261211"
+                ],
+                "stst": 60480
+              },
+              {
+                "tripid": 29329020,
+                "tatripid": "49499007",
+                "origtatripno": "280488138",
+                "dates": [
+                  "20261123",
+                  "20261124",
+                  "20261125",
+                  "20261127",
+                  "20261130",
+                  "20261201",
+                  "20261202",
+                  "20261203",
+                  "20261204",
+                  "20261207",
+                  "20261208",
+                  "20261209",
+                  "20261210",
+                  "20261211"
+                ],
+                "stst": 25500
+              }
+            ],
+            "modifications": [
+              {
+                "dtrstartstop": {
+                  "geoid": 6677,
+                  "stpid": "8228",
+                  "stpnm": "Western & Grand",
+                  "seq": 15
+                },
+                "dtrendstop": {
+                  "geoid": 6677,
+                  "stpid": "8228",
+                  "stpnm": "Western & Grand",
+                  "seq": 15
+                },
+                "repstops": [
+                  {
+                    "geoid": 27167,
+                    "stpid": "18645",
+                    "stpnm": "Grand & Western (Metra MD-N/MD-W/NCS)",
+                    "seq": 15,
+                    "lat": 41.890572000001235,
+                    "lon": -87.68635199999918,
+                    "adhoc": false,
+                    "relpasstime": 153
+                  }
+                ],
+                "delay": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "86879503-7CEA-48C8-BB29-FFBF0D73B1EA",
+        "ver": 3,
+        "st": 1,
+        "desc": "J14_NB_B485-26",
+        "rtdirs": [
+          {
+            "rt": "J14",
+            "dir": "Northbound"
+          }
+        ],
+        "startdt": 1794582000000,
+        "enddt": 1797744600000,
+        "moddt": 1794597135000,
+        "ptrs": [
+          {
+            "origpid": 4276,
+            "dtrpid": 502470,
+            "encpl": "keq}FzupuO??CaALGdBMXMHy@EaHMsE]a{@J???K?Mk]J???K?KyV_B??S???Rw]N?V@nAO@?AN??nCDjF?zBDbJ?dBO???N?@`@?jBFbN?pF@lAK???J??ZFvJCbB]h@mJhIGO??FNoExD}@RwKFAM??@L}TP?O???NqXTAO??@LcVP?M???LwUPAK??@JyRP?Q???PsVHCoMEsBIY}CqEsQ`Ys@@HS??IRwTH?O???NsVN?Q???PaRLAQ@??P}WP?S?@?Psm@`@?U?@?Rih@Z?O???N}A?gAg@_DcDy@i@{@Yg@I{@DkBd@qCdAkBTkBEqAa@}DaCk@WsAYyAC{@LuAj@wEbDqCzAaEfBqE~AeCl@eDh@eJh@yARoAj@uCfD}AnA_DjBw@VoCRaBEeAM{Ac@uEcC{@UkAKeA@kAN{@VaB`AoDrDoBpA}An@aAXkBT}MHoBJmB^sAb@iAl@oB~AwAbBmE~HcA~AcBjBmItFcSvOuBhBoB|BaG~IcBvB}BzBi_@zW_C~A_D|AoFpBcNtFgCxAgA|@_A~@qKzMuB|BiBzAiM~IiBbAyAl@eCn@oBZqL^wCViB^wa@tMgKvC{f@tKaCn@gBp@}BlAyCpBqAt@c^fNiExAoElAoHnAgE`Ak@XcAfAmCt@kIbBoEX]PqCBFY???XgWNAf@@|@S?@?P??z@@~@?xB@N?vB@V?hA@|@O???L?@Z?b@yMJ?K???JqN@AM??@LgNJ@KA??J}BG_A@iCZCL@hA?dBFnA?XK???J??\\@b@CzFPpH?XE???D??v@@bB?fED~I?|@IA??H@AtA@dAAjADpF?L@fA?ZK???J?A`BJ|[QD??PA?`@Bj@?p@@v@?|A@V?ViFF?O???N_HF@dC?b@BzB~FIBkB@e@",
+            "trips": [
+              {
+                "tripid": 47842010,
+                "tatripid": "22224290",
+                "origtatripno": "280460044",
+                "dates": [
+                  "20261122",
+                  "20261126",
+                  "20261129",
+                  "20261206",
+                  "20261213"
+                ],
+                "stst": 53280
+              },
+              {
+                "tripid": 22024020,
+                "tatripid": "1030979",
+                "origtatripno": "280487795",
+                "dates": [
+                  "20261123",
+                  "20261124",
+                  "20261125",
+                  "20261127",
+                  "20261130",
+                  "20261201",
+                  "20261202",
+                  "20261203",
+                  "20261204",
+                  "20261207",
+                  "20261208",
+                  "20261209",
+                  "20261210",
+                  "20261211",
+                  "20261214",
+                  "20261215",
+                  "20261216",
+                  "20261217",
+                  "20261218"
+                ],
+                "stst": 30180
+              },
+              {
+                "tripid": 38227010,
+                "tatripid": "22224290",
+                "origtatripno": "280460033",
+                "dates": [
+                  "20261122",
+                  "20261126",
+                  "20261129",
+                  "20261206",
+                  "20261213"
+                ],
+                "stst": 46680
+              }
+            ],
+            "modifications": [
+              {
+                "dtrstartstop": {
+                  "geoid": 3642,
+                  "stpid": "5282",
+                  "stpnm": "Jeffery & 97th Street",
+                  "seq": 9
+                },
+                "repstops": [],
+                "delay": -540
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

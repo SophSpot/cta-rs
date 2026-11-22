@@ -1,11 +1,11 @@
 //! Async and blocking clients, and the traits for plugging in an HTTP client.
 
 use crate::trains::{
-    Arrival, ArrivalsQuery, DEFAULT_BASE_URL, FollowedTrain, LocationsQuery, TrainLocation,
-    arrivals_request, follow_request, locations_request, parse_arrivals, parse_follow,
-    parse_locations,
+    Arrival, ArrivalsQuery, FollowedTrain, LocationsQuery, TrainLocation, arrivals_request,
+    follow_request, locations_request, parse_arrivals, parse_follow, parse_locations,
 };
-use crate::{Api, Error, Request, ResponseError};
+use crate::{Api, Error, Request, ResponseError, alerts, buses, trains};
+use jiff::ZonedDateTime;
 use std::fmt;
 use std::marker::PhantomData;
 use url::Url;
@@ -14,12 +14,18 @@ use url::Url;
 struct Config {
     train_key: Option<String>,
     train_base: Url,
+    bus_key: Option<String>,
+    bus_base: Url,
+    alerts_base: Url,
 }
 impl Default for Config {
     fn default() -> Self {
         Self {
             train_key: None,
-            train_base: Url::parse(DEFAULT_BASE_URL).expect("default base URL is valid"),
+            train_base: Url::parse(trains::DEFAULT_BASE_URL).expect("default base URL is valid"),
+            bus_key: None,
+            bus_base: Url::parse(buses::DEFAULT_BASE_URL).expect("default base URL is valid"),
+            alerts_base: Url::parse(alerts::DEFAULT_BASE_URL).expect("default base URL is valid"),
         }
     }
 }
@@ -30,6 +36,17 @@ impl Config {
         let key = self.train_key.as_deref().ok_or(Api::Train)?;
         Ok((&self.train_base, key))
     }
+
+    /// The Bus Tracker base URL and key, or which key is missing.
+    fn bus(&self) -> Result<(&Url, &str), Api> {
+        let key = self.bus_key.as_deref().ok_or(Api::Bus)?;
+        Ok((&self.bus_base, key))
+    }
+
+    /// The Customer Alerts base URL. Customer Alerts needs no key.
+    fn alerts(&self) -> &Url {
+        &self.alerts_base
+    }
 }
 
 impl fmt::Debug for Config {
@@ -37,6 +54,9 @@ impl fmt::Debug for Config {
         f.debug_struct("Config")
             .field("train_key", &self.train_key.as_ref().map(|_| "REDACTED"))
             .field("train_base_url", &self.train_base.as_str())
+            .field("bus_key", &self.bus_key.as_ref().map(|_| "REDACTED"))
+            .field("bus_base_url", &self.bus_base.as_str())
+            .field("alerts_base_url", &self.alerts_base.as_str())
             .finish()
     }
 }
@@ -59,6 +79,18 @@ trait Endpoint {
 struct ArrivalsCall<'a>(&'a ArrivalsQuery);
 struct LocationsCall<'a>(&'a LocationsQuery);
 struct FollowCall<'a>(&'a str);
+struct TimeCall;
+struct RoutesCall<'a>(&'a buses::RoutesQuery);
+struct DirectionsCall<'a>(&'a buses::DirectionsQuery);
+struct LocalesCall<'a>(&'a buses::LocalesQuery);
+struct StopsCall<'a>(&'a buses::StopsQuery);
+struct VehiclesCall<'a>(&'a buses::VehiclesQuery);
+struct PredictionsCall(buses::PredictionsQuery);
+struct PatternsCall<'a>(&'a buses::PatternsQuery);
+struct DetoursCall<'a>(&'a buses::DetoursQuery);
+struct EnhancedDetoursCall<'a>(&'a buses::EnhancedDetoursQuery);
+struct RouteStatusCall<'a>(&'a alerts::RouteStatusQuery);
+struct DetailedAlertsCall<'a>(&'a alerts::AlertsQuery);
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -90,6 +122,136 @@ impl Endpoint for FollowCall<'_> {
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         parse_follow(body)
+    }
+}
+
+impl Endpoint for TimeCall {
+    type Output = ZonedDateTime;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::time_request(base, key))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_time(body)
+    }
+}
+
+impl Endpoint for RoutesCall<'_> {
+    type Output = Vec<buses::RouteInfo>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::routes_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_routes(body)
+    }
+}
+
+impl Endpoint for DirectionsCall<'_> {
+    type Output = Vec<buses::DirectionInfo>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::directions_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_directions(body)
+    }
+}
+
+impl Endpoint for StopsCall<'_> {
+    type Output = Vec<buses::Stop>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::stops_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_stops(body)
+    }
+}
+
+impl Endpoint for VehiclesCall<'_> {
+    type Output = Vec<buses::Vehicle>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::vehicles_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_vehicles(body)
+    }
+}
+
+impl Endpoint for PredictionsCall {
+    type Output = Vec<buses::Prediction>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::predictions_request(base, key, &self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_predictions(body)
+    }
+}
+
+impl Endpoint for PatternsCall<'_> {
+    type Output = Vec<buses::Pattern>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::patterns_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_patterns(body)
+    }
+}
+
+impl Endpoint for DetoursCall<'_> {
+    type Output = Vec<buses::Detour>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::detours_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_detours(body)
+    }
+}
+
+impl Endpoint for EnhancedDetoursCall<'_> {
+    type Output = Vec<buses::DetourSchedule>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::enhanced_detours_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_enhanced_detours(body)
+    }
+}
+
+impl Endpoint for RouteStatusCall<'_> {
+    type Output = Vec<alerts::RouteStatus>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        Ok(alerts::route_status_request(config.alerts(), self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        alerts::parse_route_status(body)
+    }
+}
+
+impl Endpoint for DetailedAlertsCall<'_> {
+    type Output = Vec<alerts::Alert>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        Ok(alerts::detailed_request(config.alerts(), self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        alerts::parse_detailed(body)
+    }
+}
+
+impl Endpoint for LocalesCall<'_> {
+    type Output = Vec<buses::LocaleInfo>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::locales_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_locales(body)
     }
 }
 
@@ -154,6 +316,26 @@ impl<M, H> ClientBuilder<M, H> {
     /// Send Train Tracker requests to `url` instead of the CTA, e.g. a local mock server.
     pub fn train_base_url(mut self, url: Url) -> Self {
         self.config.train_base = with_trailing_slash(url);
+        self
+    }
+
+    /// The Bus Tracker API key, used by [`AsyncClient::buses`] and
+    /// [`BlockingClient::buses`].
+    pub fn bus_key(mut self, key: impl Into<String>) -> Self {
+        self.config.bus_key = Some(key.into());
+        self
+    }
+
+    /// Send Bus Tracker requests to `url` instead of the CTA, e.g. a local mock server.
+    pub fn bus_base_url(mut self, url: Url) -> Self {
+        self.config.bus_base = with_trailing_slash(url);
+        self
+    }
+
+    /// Send Customer Alerts requests to `url` instead of the CTA, e.g. a local mock
+    /// server. Customer Alerts needs no key.
+    pub fn alerts_base_url(mut self, url: Url) -> Self {
+        self.config.alerts_base = with_trailing_slash(url);
         self
     }
 
@@ -251,6 +433,16 @@ impl<H> AsyncClient<H> {
     pub fn trains(&self) -> Trains<'_, H> {
         Trains { client: self }
     }
+
+    /// The Bus Tracker API.
+    pub fn buses(&self) -> Buses<'_, H> {
+        Buses { client: self }
+    }
+
+    /// The Customer Alerts API: service status and alerts. It needs no key.
+    pub fn alerts(&self) -> Alerts<'_, H> {
+        Alerts { client: self }
+    }
 }
 
 impl<H: AsyncHttpClient> AsyncClient<H> {
@@ -303,6 +495,312 @@ impl<H: AsyncHttpClient> Trains<'_, H> {
     /// [`ApiErrorKind::RunNotFound`](crate::ApiErrorKind::RunNotFound).
     pub async fn follow(&self, run: &str) -> Result<FollowedTrain, Error<H::Error>> {
         self.client.call(FollowCall(run)).await
+    }
+}
+
+/// The Bus Tracker API on an [`AsyncClient`]. Created by [`AsyncClient::buses`].
+///
+/// Every method needs a bus key; without one it returns [`Error::MissingKey`].
+pub struct Buses<'a, H> {
+    client: &'a AsyncClient<H>,
+}
+
+impl<H: AsyncHttpClient> Buses<'_, H> {
+    /// Bus Tracker's current time, in Chicago.
+    ///
+    /// Predictions and vehicle positions are timestamped by this clock, so use it rather
+    /// than the local clock when comparing against them.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// let now = client.buses().time().await?;
+    /// println!("Bus Tracker time: {now}");
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn time(&self) -> Result<ZonedDateTime, Error<H::Error>> {
+        self.client.call(TimeCall).await
+    }
+
+    /// Every bus route, with its code, name, and color.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::RoutesQuery;
+    ///
+    /// for r in client.buses().routes(&RoutesQuery::all()).await? {
+    ///     println!("{:>4}  {}", r.route, r.name);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn routes(
+        &self,
+        query: &buses::RoutesQuery,
+    ) -> Result<Vec<buses::RouteInfo>, Error<H::Error>> {
+        self.client.call(RoutesCall(query)).await
+    }
+
+    /// The directions a route runs in, usually two.
+    ///
+    /// Some routes run in one direction only, and an unknown route has none.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::DirectionsQuery;
+    ///
+    /// for d in client.buses().directions(&DirectionsQuery::route("20")).await? {
+    ///     println!("{}", d.direction);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn directions(
+        &self,
+        query: &buses::DirectionsQuery,
+    ) -> Result<Vec<buses::DirectionInfo>, Error<H::Error>> {
+        self.client.call(DirectionsCall(query)).await
+    }
+
+    /// Stops on a route in one direction, or stops by ID.
+    ///
+    /// Stops for a route come in no particular order. Stop IDs that don't exist or have
+    /// no service are left out rather than reported as errors.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::{Direction, StopsQuery};
+    ///
+    /// let query = StopsQuery::route("20", Direction::Eastbound);
+    /// for s in client.buses().stops(&query).await? {
+    ///     println!("{:>5}  {}", s.id, s.name);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn stops(
+        &self,
+        query: &buses::StopsQuery,
+    ) -> Result<Vec<buses::Stop>, Error<H::Error>> {
+        self.client.call(StopsCall(query)).await
+    }
+
+    /// Buses in service: buses by ID, or every bus on some routes.
+    ///
+    /// Routes with no buses running and buses that aren't in service are left out
+    /// rather than reported as errors.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::VehiclesQuery;
+    ///
+    /// for v in client.buses().vehicles(&VehiclesQuery::route("20")).await? {
+    ///     let c = v.position.coordinates;
+    ///     println!("bus {} to {} at ({:.4}, {:.4})", v.id, v.destination, c.lat, c.lon);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn vehicles(
+        &self,
+        query: &buses::VehiclesQuery,
+    ) -> Result<Vec<buses::Vehicle>, Error<H::Error>> {
+        self.client.call(VehiclesCall(query)).await
+    }
+
+    /// Predicted arrivals at some stops, or the upcoming stops of some buses.
+    ///
+    /// Predictions come soonest first. Stops with no service and buses that aren't in
+    /// service are left out rather than reported as errors. Canceled trips are included;
+    /// check [`Prediction::dynamic_action`](buses::Prediction::dynamic_action).
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::{Countdown, PredictionsQuery, StopId};
+    ///
+    /// let query = PredictionsQuery::at(StopId(456)).route("20").top(3);
+    /// for p in client.buses().predictions(&query).await? {
+    ///     match p.countdown {
+    ///         Countdown::Minutes(m) => println!("{} to {} in {m} min", p.route, p.destination),
+    ///         _ => println!("{} to {}: {:?}", p.route, p.destination, p.countdown),
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn predictions(
+        &self,
+        query: impl Into<buses::PredictionsQuery>,
+    ) -> Result<Vec<buses::Prediction>, Error<H::Error>> {
+        self.client.call(PredictionsCall(query.into())).await
+    }
+
+    /// The paths routes take: each pattern's stops in order, and the points for drawing
+    /// it on a map.
+    ///
+    /// Unknown routes and pattern IDs are left out rather than reported as errors.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::{PatternPoint, PatternsQuery};
+    ///
+    /// for pattern in client.buses().patterns(&PatternsQuery::route("20")).await? {
+    ///     println!("{} ({:.1} mi)", pattern.direction, pattern.length_ft / 5280.0);
+    ///     for point in &pattern.points {
+    ///         if let PatternPoint::Stop { name, .. } = point {
+    ///             println!("  {name}");
+    ///         }
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn patterns(
+        &self,
+        query: &buses::PatternsQuery,
+    ) -> Result<Vec<buses::Pattern>, Error<H::Error>> {
+        self.client.call(PatternsCall(query)).await
+    }
+
+    /// Detours affecting today's service, including canceled ones.
+    ///
+    /// See [Detours](crate::buses#detours) for how detours link to stops and patterns.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::DetoursQuery;
+    ///
+    /// for d in client.buses().detours(&DetoursQuery::all()).await? {
+    ///     for a in &d.affects {
+    ///         println!("{} {} detoured until {}", a.route, a.direction, d.end);
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn detours(
+        &self,
+        query: &buses::DetoursQuery,
+    ) -> Result<Vec<buses::Detour>, Error<H::Error>> {
+        self.client.call(DetoursCall(query)).await
+    }
+
+    /// Current and upcoming detours with trip-level details: the trips and dates
+    /// affected, each detoured segment, replaced stops, and delays.
+    ///
+    /// This is meant for building GTFS-Realtime feeds. It can't be filtered, and the
+    /// response is large (several hundred kilobytes). For showing detours to riders, use
+    /// [`detours`](Self::detours) with [`patterns`](Self::patterns) and
+    /// [`stops`](Self::stops); see [Detours](crate::buses#detours).
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::EnhancedDetoursQuery;
+    ///
+    /// for s in client.buses().enhanced_detours(&EnhancedDetoursQuery::all()).await? {
+    ///     let trips: usize = s.patterns.iter().map(|p| p.trips.len()).sum();
+    ///     println!("{}: {} patterns, {trips} trips", s.detour.id, s.patterns.len());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn enhanced_detours(
+        &self,
+        query: &buses::EnhancedDetoursQuery,
+    ) -> Result<Vec<buses::DetourSchedule>, Error<H::Error>> {
+        self.client.call(EnhancedDetoursCall(query)).await
+    }
+
+    /// The languages Bus Tracker accepts, for a query's `locale` method.
+    ///
+    /// See [`Locale`](buses::Locale) for what CTA translates today.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::LocalesQuery;
+    ///
+    /// for l in client.buses().locales(&LocalesQuery::all().native_names()).await? {
+    ///     println!("{}: {}", l.locale, l.name);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn locales(
+        &self,
+        query: &buses::LocalesQuery,
+    ) -> Result<Vec<buses::LocaleInfo>, Error<H::Error>> {
+        self.client.call(LocalesCall(query)).await
+    }
+}
+
+/// The Customer Alerts API on an [`AsyncClient`]. Created by [`AsyncClient::alerts`].
+///
+/// Customer Alerts needs no key.
+pub struct Alerts<'a, H> {
+    client: &'a AsyncClient<H>,
+}
+
+impl<H: AsyncHttpClient> Alerts<'_, H> {
+    /// The current status of routes, stations, or systemwide groups.
+    ///
+    /// Each status reflects the most severe active alert affecting that service. A
+    /// station appears once for each line serving it.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::alerts::RouteStatusQuery;
+    ///
+    /// for s in client.alerts().route_status(&RouteStatusQuery::all()).await? {
+    ///     if !s.is_normal() {
+    ///         println!("{}: {}", s.name, s.status);
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn route_status(
+        &self,
+        query: &alerts::RouteStatusQuery,
+    ) -> Result<Vec<alerts::RouteStatus>, Error<H::Error>> {
+        self.client.call(RouteStatusCall(query)).await
+    }
+
+    /// Service alerts, with headlines, descriptions, severity, and the routes and
+    /// stations they affect.
+    ///
+    /// Without filters, this includes upcoming alerts as well as active ones. No matching
+    /// alerts is an empty list, not an error.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::alerts::{AlertsQuery, RouteId};
+    /// use cta::trains::Route;
+    ///
+    /// let query = AlertsQuery::routes([RouteId::from(Route::Brown), RouteId::from("22")])?
+    ///     .active_only();
+    /// for a in client.alerts().detailed(&query).await? {
+    ///     println!("[{}] {}", a.severity.score, a.headline);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn detailed(
+        &self,
+        query: &alerts::AlertsQuery,
+    ) -> Result<Vec<alerts::Alert>, Error<H::Error>> {
+        self.client.call(DetailedAlertsCall(query)).await
     }
 }
 
@@ -361,6 +859,16 @@ impl<H> BlockingClient<H> {
     pub fn trains(&self) -> BlockingTrains<'_, H> {
         BlockingTrains { client: self }
     }
+
+    /// The Bus Tracker API
+    pub fn buses(&self) -> BlockingBuses<'_, H> {
+        BlockingBuses { client: self }
+    }
+
+    /// The Customer Alerts API: service status and alerts. It needs no key.
+    pub fn alerts(&self) -> BlockingAlerts<'_, H> {
+        BlockingAlerts { client: self }
+    }
 }
 
 impl<H: BlockingHttpClient> BlockingClient<H> {
@@ -406,6 +914,142 @@ impl<H: BlockingHttpClient> BlockingTrains<'_, H> {
         self.client.call(FollowCall(run))
     }
 }
+
+/// The Bus Tracker API on a [`BlockingClient`]. Created by [`BlockingClient::buses`].
+///
+/// Every method needs a bus key; without one it returns [`Error::MissingKey`].
+pub struct BlockingBuses<'a, H> {
+    client: &'a BlockingClient<H>,
+}
+
+impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
+    /// Bus Tracker's current time, in Chicago.
+    ///
+    /// See [`Buses::time`].
+    pub fn time(&self) -> Result<ZonedDateTime, Error<H::Error>> {
+        self.client.call(TimeCall)
+    }
+
+    /// Every bus route, with its code, name, and color.
+    ///
+    /// See [`Buses::routes`].
+    pub fn routes(
+        &self,
+        query: &buses::RoutesQuery,
+    ) -> Result<Vec<buses::RouteInfo>, Error<H::Error>> {
+        self.client.call(RoutesCall(query))
+    }
+
+    /// The directions a route runs in, usually two.
+    ///
+    /// See [`Buses::directions`].
+    pub fn directions(
+        &self,
+        query: &buses::DirectionsQuery,
+    ) -> Result<Vec<buses::DirectionInfo>, Error<H::Error>> {
+        self.client.call(DirectionsCall(query))
+    }
+
+    /// Stops on a route in one direction, or stops by ID.
+    ///
+    /// See [`Buses::stops`].
+    pub fn stops(&self, query: &buses::StopsQuery) -> Result<Vec<buses::Stop>, Error<H::Error>> {
+        self.client.call(StopsCall(query))
+    }
+
+    /// Buses in service: buses by ID, or every bus on some routes.
+    ///
+    /// See [`Buses::vehicles`].
+    pub fn vehicles(
+        &self,
+        query: &buses::VehiclesQuery,
+    ) -> Result<Vec<buses::Vehicle>, Error<H::Error>> {
+        self.client.call(VehiclesCall(query))
+    }
+
+    /// Predicted arrivals at some stops, or the upcoming stops of some buses.
+    ///
+    /// See [`Buses::predictions`].
+    pub fn predictions(
+        &self,
+        query: impl Into<buses::PredictionsQuery>,
+    ) -> Result<Vec<buses::Prediction>, Error<H::Error>> {
+        self.client.call(PredictionsCall(query.into()))
+    }
+
+    /// The paths routes take: each pattern's stops in order, and the points for drawing
+    /// it on a map.
+    ///
+    /// See [`Buses::patterns`].
+    pub fn patterns(
+        &self,
+        query: &buses::PatternsQuery,
+    ) -> Result<Vec<buses::Pattern>, Error<H::Error>> {
+        self.client.call(PatternsCall(query))
+    }
+
+    /// Detours affecting today's service, including canceled ones.
+    ///
+    /// See [`Buses::detours`].
+    pub fn detours(
+        &self,
+        query: &buses::DetoursQuery,
+    ) -> Result<Vec<buses::Detour>, Error<H::Error>> {
+        self.client.call(DetoursCall(query))
+    }
+
+    /// Current and upcoming detours with trip-level details, for GTFS-Realtime feeds.
+    ///
+    /// See [`Buses::enhanced_detours`].
+    pub fn enhanced_detours(
+        &self,
+        query: &buses::EnhancedDetoursQuery,
+    ) -> Result<Vec<buses::DetourSchedule>, Error<H::Error>> {
+        self.client.call(EnhancedDetoursCall(query))
+    }
+
+    /// The languages Bus Tracker accepts, for a query's `locale` method.
+    ///
+    /// See [`Buses::locales`].
+    pub fn locales(
+        &self,
+        query: &buses::LocalesQuery,
+    ) -> Result<Vec<buses::LocaleInfo>, Error<H::Error>> {
+        self.client.call(LocalesCall(query))
+    }
+}
+
+/// The Customer Alerts API on a [`BlockingClient`]. Created by
+/// [`BlockingClient::alerts`].
+///
+/// Customer Alerts needs no key.
+pub struct BlockingAlerts<'a, H> {
+    client: &'a BlockingClient<H>,
+}
+
+impl<H: BlockingHttpClient> BlockingAlerts<'_, H> {
+    /// The current status of routes, stations, or systemwide groups.
+    ///
+    /// See [`Alerts::route_status`].
+    pub fn route_status(
+        &self,
+        query: &alerts::RouteStatusQuery,
+    ) -> Result<Vec<alerts::RouteStatus>, Error<H::Error>> {
+        self.client.call(RouteStatusCall(query))
+    }
+
+    /// Service alerts, with headlines, descriptions, severity, and the routes and
+    /// stations they affect.
+    ///
+    /// See [`Alerts::detailed`].
+    pub fn detailed(
+        &self,
+        query: &alerts::AlertsQuery,
+    ) -> Result<Vec<alerts::Alert>, Error<H::Error>> {
+        self.client.call(DetailedAlertsCall(query))
+    }
+}
+
 impl<H: BlockingHttpClient> ClientBuilder<Blocking, H> {
     /// Create the client.
     pub fn build(self) -> BlockingClient<H> {
@@ -444,6 +1088,19 @@ mod tests {
     const LOCATIONS: &[u8] = include_bytes!("../tests/fixtures/locations_yellow.json");
     const FOLLOW: &[u8] = include_bytes!("../tests/fixtures/follow_125.json");
     const BAD_KEY: &[u8] = br#"{"ctatt":{"errCd":"101","errNm":"Invalid API key"}}"#;
+    const BUS_TIME: &[u8] = include_bytes!("../tests/fixtures/bus_time.json");
+    const BUS_BAD_KEY: &[u8] = include_bytes!("../tests/fixtures/bus_bad_key.json");
+    const BUS_ROUTES: &[u8] = include_bytes!("../tests/fixtures/bus_routes.json");
+    const BUS_DIRECTIONS: &[u8] = include_bytes!("../tests/fixtures/bus_directions_20.json");
+    const BUS_LOCALES: &[u8] = include_bytes!("../tests/fixtures/bus_locales_native.json");
+    const BUS_STOPS: &[u8] = include_bytes!("../tests/fixtures/bus_stops_by_id.json");
+    const BUS_VEHICLES: &[u8] = include_bytes!("../tests/fixtures/bus_vehicles_by_id.json");
+    const BUS_PREDICTIONS: &[u8] = include_bytes!("../tests/fixtures/bus_predictions_456.json");
+    const BUS_PATTERNS: &[u8] = include_bytes!("../tests/fixtures/bus_patterns_20.json");
+    const BUS_DETOURS: &[u8] = include_bytes!("../tests/fixtures/bus_detours.json");
+    const BUS_ENHANCED: &[u8] = include_bytes!("../tests/fixtures/bus_enhanced_detours.json");
+    const ALERTS_ROUTES: &[u8] = include_bytes!("../tests/fixtures/alerts_routes.json");
+    const ALERTS_DETAILED: &[u8] = include_bytes!("../tests/fixtures/alerts_alerts.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -593,13 +1250,17 @@ mod tests {
 
     #[test]
     fn debug_hides_key() {
-        let builder = AsyncClient::builder().train_key("secret");
+        let builder = AsyncClient::builder()
+            .train_key("secret")
+            .bus_key("secret2");
         let client = AsyncClient::builder()
             .train_key("secret")
+            .bus_key("secret2")
             .http(FakeHttp::failing())
             .build();
         let blocking = BlockingClient::builder()
             .train_key("secret")
+            .bus_key("secret2")
             .http(FakeHttp::failing())
             .build();
         for out in [
@@ -608,6 +1269,7 @@ mod tests {
             format!("{blocking:?}"),
         ] {
             assert!(!out.contains("secret"), "{out}");
+            assert!(!out.contains("secret2"), "{out}");
             assert!(out.contains("REDACTED"), "{out}");
         }
     }
@@ -615,13 +1277,296 @@ mod tests {
     #[test]
     fn debug_shows_missing_key_as_none() {
         let client = AsyncClient::builder().http(FakeHttp::failing()).build();
-        assert!(format!("{client:?}").contains("train_key: None"));
+        let out = format!("{client:?}");
+        assert!(out.contains("train_key: None"), "{out}");
+        assert!(out.contains("bus_key: None"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn async_alerts_route_status_needs_no_key() {
+        let http = FakeHttp::ok(ALERTS_ROUTES);
+        // No keys at all.
+        let client = AsyncClient::builder().http(http.clone()).build();
+        let statuses = client
+            .alerts()
+            .route_status(&alerts::RouteStatusQuery::all())
+            .await
+            .unwrap();
+        assert_eq!(statuses.len(), 138);
+        let url = http.last_url();
+        assert_eq!(url.host_str(), Some("www.transitchicago.com"));
+        assert_eq!(url.path(), "/api/1.0/routes.aspx");
+        assert_eq!(url.query(), Some("outputType=JSON"));
+    }
+
+    #[tokio::test]
+    async fn async_alerts_detailed() {
+        let http = FakeHttp::ok(ALERTS_DETAILED);
+        let client = AsyncClient::builder().http(http.clone()).build();
+        let query = alerts::AlertsQuery::station(trains::StationId(40380)).active_only();
+        let alerts = client.alerts().detailed(&query).await.unwrap();
+        assert_eq!(alerts.len(), 53);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/api/1.0/alerts.aspx");
+        assert_eq!(
+            url.query(),
+            Some("stationid=40380&activeonly=true&outputType=JSON")
+        );
+    }
+
+    #[test]
+    fn blocking_alerts_detailed() {
+        let http = FakeHttp::ok(ALERTS_DETAILED);
+        let client = BlockingClient::builder().http(http.clone()).build();
+        let alerts = client
+            .alerts()
+            .detailed(&alerts::AlertsQuery::all())
+            .unwrap();
+        assert!(!alerts.is_empty());
+        assert_eq!(http.last_url().query(), Some("outputType=JSON"));
+    }
+
+    #[test]
+    fn blocking_alerts_route_status() {
+        let http = FakeHttp::ok(ALERTS_ROUTES);
+        let client = BlockingClient::builder()
+            .alerts_base_url(Url::parse("http://localhost:8080/api/1.0").unwrap())
+            .http(http.clone())
+            .build();
+        let query = alerts::RouteStatusQuery::train_routes([Route::Red]).unwrap();
+        client.alerts().route_status(&query).unwrap();
+        assert_eq!(
+            http.last_url().as_str(),
+            "http://localhost:8080/api/1.0/routes.aspx?routeid=Red&outputType=JSON"
+        );
+    }
+
+    #[test]
+    fn alerts_config_defaults_and_overrides() {
+        let config = Config::default();
+        assert_eq!(config.alerts().as_str(), alerts::DEFAULT_BASE_URL);
+        let builder = AsyncClient::builder()
+            .alerts_base_url(Url::parse("http://localhost:8080/api/1.0").unwrap());
+        assert_eq!(
+            builder.config.alerts().as_str(),
+            "http://localhost:8080/api/1.0/"
+        );
+        assert!(format!("{builder:?}").contains("alerts_base_url"));
+    }
+
+    #[test]
+    fn bus_config_defaults_and_overrides() {
+        let config = Config::default();
+        assert_eq!(config.bus_base.as_str(), buses::DEFAULT_BASE_URL);
+        assert_eq!(config.bus(), Err(Api::Bus));
+
+        let builder = AsyncClient::builder()
+            .bus_key("k")
+            .bus_base_url(Url::parse("http://localhost:8080/bustime/api/v3").unwrap());
+        assert_eq!(
+            builder.config.bus_base.as_str(),
+            "http://localhost:8080/bustime/api/v3/"
+        );
+        let (base, key) = builder.config.bus().unwrap();
+        assert_eq!(key, "k");
+        assert_eq!(base.as_str(), "http://localhost:8080/bustime/api/v3/");
     }
 
     #[cfg(feature = "reqwest")]
     #[test]
     fn async_default_http_is_reqwest() {
         let _: AsyncClient<reqwest::Client> = AsyncClient::builder().train_key("k").build();
+    }
+
+    fn async_bus_client(http: FakeHttp) -> AsyncClient<FakeHttp> {
+        AsyncClient::builder().bus_key("k").http(http).build()
+    }
+
+    fn blocking_bus_client(http: FakeHttp) -> BlockingClient<FakeHttp> {
+        BlockingClient::builder().bus_key("k").http(http).build()
+    }
+
+    #[tokio::test]
+    async fn async_bus_time() {
+        let http = FakeHttp::ok(BUS_TIME);
+        let tm = async_bus_client(http.clone()).buses().time().await.unwrap();
+        assert_eq!(tm.hour(), 10);
+        let url = http.last_url();
+        assert_eq!(url.host_str(), Some("www.ctabustracker.com"));
+        assert_eq!(url.path(), "/bustime/api/v3/gettime");
+        assert!(url.query().unwrap().starts_with("key=k&"));
+    }
+
+    #[tokio::test]
+    async fn async_bus_routes() {
+        let http = FakeHttp::ok(BUS_ROUTES);
+        let routes = async_bus_client(http.clone())
+            .buses()
+            .routes(&buses::RoutesQuery::all())
+            .await
+            .unwrap();
+        assert_eq!(routes.len(), 125);
+        assert_eq!(http.last_url().path(), "/bustime/api/v3/getroutes");
+    }
+
+    #[tokio::test]
+    async fn async_bus_directions() {
+        let http = FakeHttp::ok(BUS_DIRECTIONS);
+        let query = buses::DirectionsQuery::route("20").locale("es");
+        let dirs = async_bus_client(http.clone())
+            .buses()
+            .directions(&query)
+            .await
+            .unwrap();
+        assert_eq!(dirs.len(), 2);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getdirections");
+        assert_eq!(url.query(), Some("key=k&rt=20&locale=es&format=json"));
+    }
+
+    #[tokio::test]
+    async fn async_bus_stops() {
+        let http = FakeHttp::ok(BUS_STOPS);
+        let query = buses::StopsQuery::stops([buses::StopId(456), buses::StopId(1577)]).unwrap();
+        let stops = async_bus_client(http.clone())
+            .buses()
+            .stops(&query)
+            .await
+            .unwrap();
+        assert_eq!(stops.len(), 1);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getstops");
+        assert_eq!(url.query(), Some("key=k&stpid=456%2C1577&format=json"));
+    }
+
+    #[tokio::test]
+    async fn async_bus_vehicles() {
+        let http = FakeHttp::ok(BUS_VEHICLES);
+        let query = buses::VehiclesQuery::routes(["20", "X9"]).unwrap();
+        let vehicles = async_bus_client(http.clone())
+            .buses()
+            .vehicles(&query)
+            .await
+            .unwrap();
+        assert_eq!(vehicles.len(), 2);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getvehicles");
+        assert_eq!(url.query(), Some("key=k&rt=20%2CX9&tmres=s&format=json"));
+    }
+
+    #[tokio::test]
+    async fn async_bus_predictions() {
+        let http = FakeHttp::ok(BUS_PREDICTIONS);
+        let query = buses::PredictionsQuery::at(buses::StopId(456))
+            .route("20")
+            .top(4);
+        let client = async_bus_client(http.clone());
+        // By reference, like the other bus methods, or by value.
+        assert_eq!(client.buses().predictions(&query).await.unwrap().len(), 4);
+        client.buses().predictions(query).await.unwrap();
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getpredictions");
+        assert_eq!(
+            url.query(),
+            Some("key=k&stpid=456&rt=20&top=4&tmres=s&format=json")
+        );
+    }
+
+    #[tokio::test]
+    async fn async_bus_patterns() {
+        let http = FakeHttp::ok(BUS_PATTERNS);
+        let patterns = async_bus_client(http.clone())
+            .buses()
+            .patterns(&buses::PatternsQuery::route("20"))
+            .await
+            .unwrap();
+        assert_eq!(patterns.len(), 2);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getpatterns");
+        assert_eq!(url.query(), Some("key=k&rt=20&format=json"));
+    }
+
+    #[tokio::test]
+    async fn async_bus_detours() {
+        let http = FakeHttp::ok(BUS_DETOURS);
+        let query = buses::DetoursQuery::route_direction("49", buses::Direction::Southbound);
+        let detours = async_bus_client(http.clone())
+            .buses()
+            .detours(&query)
+            .await
+            .unwrap();
+        assert_eq!(detours.len(), 8);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getdetours");
+        assert_eq!(
+            url.query(),
+            Some("key=k&rt=49&rtdir=Southbound&format=json")
+        );
+    }
+
+    #[tokio::test]
+    async fn async_bus_enhanced_detours() {
+        let http = FakeHttp::ok(BUS_ENHANCED);
+        let schedules = async_bus_client(http.clone())
+            .buses()
+            .enhanced_detours(&buses::EnhancedDetoursQuery::all())
+            .await
+            .unwrap();
+        assert_eq!(schedules.len(), 4);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getenhanceddetours");
+        assert_eq!(url.query(), Some("key=k&format=json"));
+    }
+
+    #[tokio::test]
+    async fn async_bus_locales() {
+        let http = FakeHttp::ok(BUS_LOCALES);
+        let locales = async_bus_client(http.clone())
+            .buses()
+            .locales(&buses::LocalesQuery::all().native_names())
+            .await
+            .unwrap();
+        assert_eq!(locales[1].name, "español");
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getlocalelist");
+        assert_eq!(url.query(), Some("key=k&inLocaleLanguage=true&format=json"));
+    }
+
+    #[tokio::test]
+    async fn async_bus_bad_key() {
+        let client = async_bus_client(FakeHttp::ok(BUS_BAD_KEY));
+        assert!(matches!(
+            client.buses().time().await,
+            Err(Error::Api(e)) if e.api == Api::Bus && e.kind() == ApiErrorKind::InvalidKey
+        ));
+    }
+
+    #[tokio::test]
+    async fn async_bus_missing_key_sends_nothing() {
+        // A train key doesn't count as a bus key.
+        let http = FakeHttp::ok(BUS_TIME);
+        let client = AsyncClient::builder()
+            .train_key("k")
+            .http(http.clone())
+            .build();
+        let result = client.buses().time().await;
+        assert!(matches!(result, Err(Error::MissingKey { api: Api::Bus })));
+        assert_eq!(http.requests(), 0);
+    }
+
+    #[tokio::test]
+    async fn async_bus_base_url() {
+        let http = FakeHttp::ok(BUS_TIME);
+        let client = AsyncClient::builder()
+            .bus_key("k")
+            .bus_base_url(Url::parse("http://localhost:8080/bustime/api/v3").unwrap())
+            .http(http.clone())
+            .build();
+        client.buses().time().await.unwrap();
+        assert_eq!(
+            http.last_url().as_str().split('?').next(),
+            Some("http://localhost:8080/bustime/api/v3/gettime")
+        );
     }
 
     // ---- BlockingClient ----
@@ -655,6 +1600,137 @@ mod tests {
             client.trains().arrivals(&q),
             Err(Error::Api(e)) if e.kind() == ApiErrorKind::InvalidKey
         ));
+    }
+
+    #[test]
+    fn blocking_bus_routes() {
+        let http = FakeHttp::ok(BUS_ROUTES);
+        let routes = blocking_bus_client(http.clone())
+            .buses()
+            .routes(&buses::RoutesQuery::all())
+            .unwrap();
+        assert_eq!(routes.len(), 125);
+        assert_eq!(http.last_url().path(), "/bustime/api/v3/getroutes");
+    }
+
+    #[test]
+    fn blocking_bus_stops() {
+        let http = FakeHttp::ok(BUS_STOPS);
+        let query = buses::StopsQuery::route("20", buses::Direction::Westbound);
+        let stops = blocking_bus_client(http.clone())
+            .buses()
+            .stops(&query)
+            .unwrap();
+        assert_eq!(stops[0].id, buses::StopId(456));
+        assert_eq!(
+            http.last_url().query(),
+            Some("key=k&rt=20&dir=Westbound&format=json")
+        );
+    }
+
+    #[test]
+    fn blocking_bus_vehicles() {
+        let http = FakeHttp::ok(BUS_VEHICLES);
+        let query = buses::VehiclesQuery::at(buses::VehicleId(8932));
+        let vehicles = blocking_bus_client(http.clone())
+            .buses()
+            .vehicles(&query)
+            .unwrap();
+        assert_eq!(vehicles[0].id, buses::VehicleId(8932));
+        assert_eq!(
+            http.last_url().query(),
+            Some("key=k&vid=8932&tmres=s&format=json")
+        );
+    }
+
+    #[test]
+    fn blocking_bus_predictions() {
+        let http = FakeHttp::ok(BUS_PREDICTIONS);
+        let query = buses::PredictionsQuery::vehicle(buses::VehicleId(8864));
+        let preds = blocking_bus_client(http.clone())
+            .buses()
+            .predictions(&query)
+            .unwrap();
+        assert_eq!(preds.len(), 4);
+        assert_eq!(
+            http.last_url().query(),
+            Some("key=k&vid=8864&tmres=s&format=json")
+        );
+    }
+
+    #[test]
+    fn blocking_bus_patterns() {
+        let http = FakeHttp::ok(BUS_PATTERNS);
+        let query = buses::PatternsQuery::pattern(buses::PatternId(954));
+        let patterns = blocking_bus_client(http.clone())
+            .buses()
+            .patterns(&query)
+            .unwrap();
+        assert_eq!(patterns[0].id, buses::PatternId(954));
+        assert_eq!(http.last_url().query(), Some("key=k&pid=954&format=json"));
+    }
+
+    #[test]
+    fn blocking_bus_detours() {
+        let http = FakeHttp::ok(BUS_DETOURS);
+        let detours = blocking_bus_client(http.clone())
+            .buses()
+            .detours(&buses::DetoursQuery::all())
+            .unwrap();
+        assert!(detours.iter().all(|d| d.active));
+        assert_eq!(http.last_url().query(), Some("key=k&format=json"));
+    }
+
+    #[test]
+    fn blocking_bus_enhanced_detours() {
+        let http = FakeHttp::ok(BUS_ENHANCED);
+        let schedules = blocking_bus_client(http.clone())
+            .buses()
+            .enhanced_detours(&buses::EnhancedDetoursQuery::all())
+            .unwrap();
+        assert!(schedules.iter().all(|s| !s.patterns.is_empty()));
+    }
+
+    #[test]
+    fn blocking_bus_directions_and_locales() {
+        let http = FakeHttp::ok(BUS_DIRECTIONS);
+        let dirs = blocking_bus_client(http.clone())
+            .buses()
+            .directions(&buses::DirectionsQuery::route("20"))
+            .unwrap();
+        assert_eq!(dirs[0].direction, buses::Direction::Eastbound);
+        assert_eq!(http.last_url().path(), "/bustime/api/v3/getdirections");
+
+        let http = FakeHttp::ok(BUS_LOCALES);
+        let locales = blocking_bus_client(http.clone())
+            .buses()
+            .locales(&buses::LocalesQuery::all())
+            .unwrap();
+        assert_eq!(locales.len(), 2);
+        assert_eq!(http.last_url().path(), "/bustime/api/v3/getlocalelist");
+    }
+
+    #[test]
+    fn blocking_bus_time_and_errors() {
+        let client = blocking_bus_client(FakeHttp::ok(BUS_TIME));
+        assert_eq!(client.buses().time().unwrap().minute(), 16);
+
+        let client = blocking_bus_client(FakeHttp::ok(BUS_BAD_KEY));
+        assert!(matches!(
+            client.buses().time(),
+            Err(Error::Api(e)) if e.kind() == ApiErrorKind::InvalidKey
+        ));
+
+        let client = blocking_bus_client(FakeHttp::failing());
+        assert!(matches!(client.buses().time(), Err(Error::Http(Refused))));
+
+        let http = FakeHttp::ok(BUS_TIME);
+        let client = BlockingClient::builder().http(http.clone()).build();
+        assert!(matches!(
+            client.buses().time(),
+            Err(Error::MissingKey { api: Api::Bus })
+        ));
+        assert_eq!(http.requests(), 0);
     }
 
     #[test]

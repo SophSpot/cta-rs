@@ -164,17 +164,8 @@ impl Display for Route {
     }
 }
 
-/// A train's last reported position.
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Position {
-    /// Latitude in degrees.
-    pub lat: f64,
-    /// Longitude in degrees.
-    pub lon: f64,
-    /// Compass heading in degrees, 0–359.
-    pub heading: u16,
-}
+/// A train's last reported position. The same type as [`crate::Position`].
+pub use crate::Position;
 
 #[derive(Deserialize)]
 struct RawEnvelope<T> {
@@ -196,11 +187,7 @@ pub(super) fn parse_envelope<T: DeserializeOwned>(body: &[u8]) -> Result<T, Resp
         .map_err(DecodeError::from)?
         .ctatt;
     if env.err_cd != 0 {
-        return Err(ApiError {
-            code: env.err_cd,
-            message: env.err_nm.unwrap_or_default(),
-        }
-        .into());
+        return Err(ApiError::train(env.err_cd, env.err_nm.unwrap_or_default()).into());
     }
     Ok(env.body)
 }
@@ -211,7 +198,10 @@ pub(super) fn position(
     heading: Option<u16>,
 ) -> Option<Position> {
     match (lat, lon, heading) {
-        (Some(lat), Some(lon), Some(heading)) => Some(Position { lat, lon, heading }),
+        (Some(lat), Some(lon), Some(heading)) => Some(Position {
+            coordinates: crate::Coordinates { lat, lon },
+            heading,
+        }),
         _ => None,
     }
 }
@@ -257,8 +247,10 @@ mod tests {
         assert_eq!(
             position(Some(41.9), Some(-87.6), Some(90)),
             Some(Position {
-                lat: 41.9,
-                lon: -87.6,
+                coordinates: crate::Coordinates {
+                    lat: 41.9,
+                    lon: -87.6
+                },
                 heading: 90
             })
         );
@@ -283,7 +275,8 @@ mod tests {
         let body = br#"{"ctatt":{"errCd":"101","errNm":"Invalid API key"}}"#;
         match parse_envelope::<Empty>(body) {
             Err(ResponseError::Api(e)) => {
-                assert_eq!(e.code, 101);
+                assert_eq!(e.api, crate::Api::Train);
+                assert_eq!(e.code, Some(101));
                 assert_eq!(e.kind(), ApiErrorKind::InvalidKey);
                 assert_eq!(e.message, "Invalid API key");
             }

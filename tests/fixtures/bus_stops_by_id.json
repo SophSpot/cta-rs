@@ -1,0 +1,22 @@
+{
+	"bustime-response": {
+		"stops": [
+			{
+				"stpid": "456",
+				"stpnm": "Madison & Jefferson",
+				"lat": 41.881901,
+				"lon": -87.643058999999
+			}
+		],
+		"error": [
+			{
+				"stpid": "1577",
+				"msg": "Stop does not belong to a route or has no service scheduled."
+			},
+			{
+				"stpid": "sad",
+				"msg": "Stop does not belong to a route or has no service scheduled."
+			}
+		]
+	}
+}

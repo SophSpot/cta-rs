@@ -1,8 +1,11 @@
-//! A client for the [CTA Train Tracker API](https://www.transitchicago.com/developers/traintracker/):
-//! live arrival predictions, train locations, and individual train runs for the
-//! Chicago 'L'.
+//! A client for the CTA's [Train Tracker](https://www.transitchicago.com/developers/traintracker/),
+//! [Bus Tracker](https://www.transitchicago.com/developers/bustracker/), and
+//! [Customer Alerts](https://www.transitchicago.com/developers/alerts/) APIs: live arrival
+//! predictions, vehicle locations, routes, stops, detours, and service alerts for
+//! Chicago's 'L' trains and buses.
 //!
-//! You need a free API key from the CTA to make requests.
+//! Train Tracker and Bus Tracker each need a free API key from the CTA. Customer Alerts
+//! needs none.
 //!
 //! # Quick start (async)
 //!
@@ -20,6 +23,46 @@
 //! let arrivals = client.trains().arrivals(&ArrivalsQuery::at(StationId(40380))).await?;
 //! for a in &arrivals {
 //!     println!("{} line to {} in {}", a.route, a.destination, a.eta());
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Quick start (buses)
+//!
+//! ```no_run
+//! # #[cfg(feature = "reqwest")]
+//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+//! use cta::AsyncClient;
+//! use cta::buses::{PredictionsQuery, StopId};
+//!
+//! let client = AsyncClient::builder().bus_key("your-bus-api-key").build();
+//!
+//! // Madison & Jefferson
+//! let query = PredictionsQuery::at(StopId(456)).route("20");
+//! for p in client.buses().predictions(&query).await? {
+//!     println!("{} to {}: {:?}", p.route, p.destination, p.countdown);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Quick start (alerts)
+//!
+//! No key needed:
+//!
+//! ```no_run
+//! # #[cfg(feature = "reqwest")]
+//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+//! use cta::AsyncClient;
+//! use cta::alerts::RouteStatusQuery;
+//!
+//! let client = AsyncClient::builder().build();
+//!
+//! for s in client.alerts().route_status(&RouteStatusQuery::all()).await? {
+//!     if !s.is_normal() {
+//!         println!("{}: {}", s.name, s.status);
+//!     }
 //! }
 //! # Ok(())
 //! # }
@@ -46,19 +89,45 @@
 //!
 //! # Endpoints
 //!
+//! Train Tracker, on [`AsyncClient::trains`] and [`BlockingClient::trains`]:
+//!
 //! | Method | What it returns |
 //! |---|---|
 //! | `arrivals` | Predicted arrivals at up to 4 stations or platforms ([`trains::Arrival`]) |
 //! | `locations` | Every train currently running on one or more lines ([`trains::TrainLocation`]) |
 //! | `follow` | One train's position and its upcoming stops ([`trains::FollowedTrain`]) |
 //!
-//! These are on [`AsyncClient::trains`] and [`BlockingClient::trains`].
+//! Bus Tracker, on [`AsyncClient::buses`] and [`BlockingClient::buses`]:
+//!
+//! | Method | What it returns |
+//! |---|---|
+//! | `predictions` | Buses coming to up to 10 stops, or the upcoming stops of up to 10 buses ([`buses::Prediction`]) |
+//! | `vehicles` | Where buses are, by bus or by route ([`buses::Vehicle`]) |
+//! | `routes`, `directions`, `stops` | Routes, the directions they run, and their stops |
+//! | `patterns` | The paths routes take, with stops in order ([`buses::Pattern`]) |
+//! | `detours` | Current detours ([`buses::Detour`]) |
+//! | `enhanced_detours` | Detours with trip-level details, for GTFS-Realtime feeds ([`buses::DetourSchedule`]) |
+//! | `locales`, `time` | The languages Bus Tracker accepts, and its clock |
+//!
+//! See [`buses`] for more, including how detours link to stops and patterns.
+//!
+//! Customer Alerts, on [`AsyncClient::alerts`] and [`BlockingClient::alerts`]:
+//!
+//! | Method | What it returns |
+//! |---|---|
+//! | `route_status` | The current status of bus routes, train lines, stations, and systemwide groups ([`alerts::RouteStatus`]) |
+//! | `detailed` | Service alerts, with severity and the routes and stations they affect ([`alerts::Alert`]) |
+//!
+//! See [`alerts`] for more.
 //!
 //! # Keys
 //!
-//! Each CTA API has its own key, set on the [`ClientBuilder`](client::ClientBuilder). A
-//! client without a key is valid: calling an API whose key isn't set returns
-//! [`Error::MissingKey`] without sending a request.
+//! Train Tracker and Bus Tracker each have their own key, set on the
+//! [`ClientBuilder`](client::ClientBuilder) with
+//! [`train_key`](client::ClientBuilder::train_key) or
+//! [`bus_key`](client::ClientBuilder::bus_key). A client without a key is valid: calling
+//! an API whose key isn't set returns [`Error::MissingKey`] without sending a request.
+//! Customer Alerts needs no key.
 //!
 //! # Features
 //!
@@ -72,9 +141,9 @@
 //!
 //! # Without an HTTP client
 //!
-//! The request builders and parsers in [`trains`] (such as [`trains::arrivals_request`] and
-//! [`trains::parse_arrivals`]) do no I/O, so you can send the request however you like and
-//! hand the response body to the parser.
+//! The request builders and parsers in [`trains`], [`buses`], and [`alerts`] (such as
+//! [`trains::arrivals_request`] and [`buses::parse_predictions`]) do no I/O, so you can
+//! send the request however you like and hand the response body to the parser.
 //!
 //! # Times
 //!
@@ -84,6 +153,8 @@
 
 #![warn(missing_docs)]
 
+pub mod alerts;
+pub mod buses;
 pub mod client;
 mod deserializers;
 pub mod trains;
@@ -95,17 +166,23 @@ use std::fmt::Formatter;
 /// Re-export of [`url::Url`], used by [`AsyncHttpClient`], [`BlockingHttpClient`], and the builder's base URLs.
 pub use url::Url;
 
-/// A CTA API the client can call, used to say which key is missing.
+/// A CTA API: which key is missing, or which API reported an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Api {
     /// The Train Tracker API: arrivals, locations, and follow.
     Train,
+    /// The Bus Tracker API: predictions, vehicles, routes, stops, patterns, and detours.
+    Bus,
+    /// The Customer Alerts API: service status and alerts. It needs no key.
+    Alerts,
 }
 
 impl std::fmt::Display for Api {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Api::Bus => "Bus Tracker",
+            Api::Alerts => "Customer Alerts",
             Api::Train => "Train Tracker",
         })
     }
@@ -114,85 +191,167 @@ impl std::fmt::Display for Api {
 /// An error reported by the CTA API itself.
 ///
 /// The request reached the CTA and got a well-formed response, but the response
-/// carried a non-zero error code (for example, an invalid key or an unknown station).
+/// reported an error (for example, an invalid key or an unknown station).
 /// Use [`kind`](ApiError::kind) to match on known errors.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("CTA API error {code}: {message}")]
+///
+/// Train Tracker errors have a numeric [`code`](ApiError::code). Bus Tracker errors
+/// only have a message, so their `code` is `None`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ApiError {
-    /// The CTA's numeric error code (`errCd`).
-    pub code: u16,
-    /// The CTA's error message (`errNm`), e.g. `"Invalid API key"`.
+    /// The API that reported the error.
+    pub api: Api,
+    /// The CTA's numeric error code (`errCd`). Always `None` for Bus Tracker errors.
+    pub code: Option<u16>,
+    /// The CTA's error message, e.g. `"Invalid API key"`.
     pub message: String,
 }
 
-/// Known CTA error codes, as returned by [`ApiError::kind`].
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.code {
+            Some(code) => write!(f, "{} error {code}: {}", self.api, self.message),
+            None => write!(f, "{} error: {}", self.api, self.message),
+        }
+    }
+}
+
+impl std::error::Error for ApiError {}
+
+/// Known CTA errors, as returned by [`ApiError::kind`].
+///
+/// Train Tracker errors are classified by code, Bus Tracker errors by message. Customer
+/// Alerts codes mean different things from Train Tracker's, so only its 900 has a named
+/// kind ([`ServerError`](Self::ServerError)). Kinds marked "Train Tracker only" are never
+/// returned for the other APIs.
 ///
 /// New kinds may be added in future versions, so a `match` needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ApiErrorKind {
-    /// The daily request limit for this key was reached (102).
+    /// The daily request limit for this key was reached.
+    ///
+    /// Train Tracker code 102; Bus Tracker "Transaction limit for current day has been exceeded."
     DailyLimitExceeded,
-    /// The API key is not valid (101).
+    /// The API key is not valid.
+    ///
+    /// Train Tracker code 101; Bus Tracker "Invalid API access key supplied".
     InvalidKey,
-    /// The station ID (`mapid`) is not valid (103).
+    /// The station ID (`mapid`) is not valid (103). Train Tracker only.
     InvalidStation,
-    /// The route is not valid (106).
+    /// The route is not valid (106). Train Tracker only.
     InvalidRoute,
-    /// The stop ID (`stpid`) is not valid (108).
+    /// The stop ID (`stpid`) is not valid (108). Train Tracker only.
     InvalidStop,
-    /// The `max` value is not valid (110).
+    /// The `max` value is not valid (110). Train Tracker only.
     InvalidMax,
-    /// A required parameter was missing from the request (100).
+    /// A required parameter was missing from the request (100). Train Tracker only.
     ///
     /// This is the CTA's error. The client-side error for a key that was never
     /// configured is [`Error::MissingKey`].
     MissingParameter,
-    /// No train with this run number is in service (501).
+    /// No train with this run number is in service (501). Train Tracker only.
     ///
     /// Expected in normal use: a run ends when the train reaches its terminal.
     RunNotFound,
-    /// The train exists, but the CTA can't determine its upcoming stops (502).
+    /// The train exists, but the CTA can't determine its upcoming stops (502). Train Tracker only.
     ///
     /// Returned by `follow`. The train may be heading to an unexpected terminal.
     NoUpcomingStops,
-    /// The train exists, but none of its predictions are for active stations (503).
+    /// The train exists, but none of its predictions are for active stations (503). Train
+    /// Tracker only.
     ///
     /// Returned by `follow`.
     NoPredictions,
-    /// The CTA had an internal error (900).
+    /// The CTA had an internal error.
+    ///
+    /// Train Tracker and Customer Alerts code 900; Bus Tracker "Internal server error -
+    /// Unable to complete request at this time".
     ServerError,
-    /// A code without a named kind. Check [`ApiError::code`].
+    /// An error without a named kind. Check [`ApiError::code`] and [`ApiError::message`].
     Other,
 }
 
 impl ApiError {
-    /// Classify the error code.
+    /// A Train Tracker error with its `errCd` and `errNm`.
+    pub(crate) fn train(code: u16, message: String) -> Self {
+        Self {
+            api: Api::Train,
+            code: Some(code),
+            message,
+        }
+    }
+
+    /// A Customer Alerts error with its `ErrorCode` and `ErrorMessage`.
+    pub(crate) fn alerts(code: u16, message: String) -> Self {
+        Self {
+            api: Api::Alerts,
+            code: Some(code),
+            message,
+        }
+    }
+
+    /// A Bus Tracker error. Bus Tracker errors have no code.
+    pub(crate) fn bus(message: String) -> Self {
+        Self {
+            api: Api::Bus,
+            code: None,
+            message,
+        }
+    }
+
+    /// Classify the error.
     ///
     /// ```
-    /// use cta::{ApiError, ApiErrorKind};
+    /// use cta::{ApiErrorKind, ResponseError};
     ///
-    /// let err = ApiError { code: 101, message: "Invalid API key".into() };
-    /// assert_eq!(err.kind(), ApiErrorKind::InvalidKey);
+    /// let body = br#"{"ctatt":{"errCd":"101","errNm":"Invalid API key"}}"#;
+    /// match cta::trains::parse_arrivals(body) {
+    ///     Err(ResponseError::Api(e)) => assert_eq!(e.kind(), ApiErrorKind::InvalidKey),
+    ///     other => panic!("expected an API error, got {other:?}"),
+    /// }
     /// ```
     pub fn kind(&self) -> ApiErrorKind {
-        match self.code {
-            100 => ApiErrorKind::MissingParameter,
-            101 => ApiErrorKind::InvalidKey,
-            102 => ApiErrorKind::DailyLimitExceeded,
-            103 => ApiErrorKind::InvalidStation,
-            106 => ApiErrorKind::InvalidRoute,
-            108 => ApiErrorKind::InvalidStop,
-            110 => ApiErrorKind::InvalidMax,
-            501 => ApiErrorKind::RunNotFound,
-            502 => ApiErrorKind::NoUpcomingStops,
-            503 => ApiErrorKind::NoPredictions,
-            900 => ApiErrorKind::ServerError,
-            _ => ApiErrorKind::Other,
+        match (self.api, self.code) {
+            (Api::Train, Some(code)) => train_kind(code),
+            (Api::Train, None) => ApiErrorKind::Other,
+            (Api::Bus, _) => bus_kind(&self.message),
+            (Api::Alerts, Some(900)) => ApiErrorKind::ServerError,
+            (Api::Alerts, _) => ApiErrorKind::Other,
         }
     }
 }
 
+fn train_kind(code: u16) -> ApiErrorKind {
+    match code {
+        100 => ApiErrorKind::MissingParameter,
+        101 => ApiErrorKind::InvalidKey,
+        102 => ApiErrorKind::DailyLimitExceeded,
+        103 => ApiErrorKind::InvalidStation,
+        106 => ApiErrorKind::InvalidRoute,
+        108 => ApiErrorKind::InvalidStop,
+        110 => ApiErrorKind::InvalidMax,
+        501 => ApiErrorKind::RunNotFound,
+        502 => ApiErrorKind::NoUpcomingStops,
+        503 => ApiErrorKind::NoPredictions,
+        900 => ApiErrorKind::ServerError,
+        _ => ApiErrorKind::Other,
+    }
+}
+
+/// Bus Tracker errors have no code, only the message text listed in its documentation.
+fn bus_kind(message: &str) -> ApiErrorKind {
+    let message = message.trim();
+    if message == "Invalid API access key supplied" {
+        ApiErrorKind::InvalidKey
+    } else if message.starts_with("Transaction limit for current day has been exceeded") {
+        ApiErrorKind::DailyLimitExceeded
+    } else if message.starts_with("Internal server error") {
+        ApiErrorKind::ServerError
+    } else {
+        ApiErrorKind::Other
+    }
+}
 /// The response couldn't be read.
 ///
 /// The body wasn't valid JSON, didn't have the expected shape, or contained a value this
@@ -253,10 +412,12 @@ pub enum ResponseError {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error<E> {
-    /// The client has no key for the API this method calls.
+    /// The client has no key for the API this method calls. Never returned for Customer
+    /// Alerts, which needs no key.
     ///
-    /// No request was sent. Set the key on the builder, e.g. with
-    /// [`ClientBuilder::train_key`](client::ClientBuilder::train_key).
+    /// No request was sent. Set the key on the builder with
+    /// [`ClientBuilder::train_key`](client::ClientBuilder::train_key) or
+    /// [`ClientBuilder::bus_key`](client::ClientBuilder::bus_key).
     #[error("no API key set for {api}")]
     MissingKey {
         /// The API whose key is missing.
@@ -313,6 +474,29 @@ impl std::fmt::Debug for Request {
     }
 }
 
+/// A point on the map, in decimal degrees (WGS 84).
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Coordinates {
+    /// Latitude in degrees, e.g. `41.88`.
+    pub lat: f64,
+    /// Longitude in degrees, e.g. `-87.64`.
+    pub lon: f64,
+}
+
+/// A vehicle's last reported position: where it is and which way it's facing.
+///
+/// Used for trains ([`trains::Arrival::position`]) and buses
+/// ([`buses::Vehicle::position`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Position {
+    /// Where the vehicle is.
+    pub coordinates: Coordinates,
+    /// Compass heading in degrees, 0–359, where 0 is north and 90 is east.
+    pub heading: u16,
+}
+
 pub(crate) fn chicago() -> Result<TimeZone, DecodeError> {
     Ok(TimeZone::get("America/Chicago")?)
 }
@@ -322,10 +506,7 @@ mod tests {
     use super::*;
 
     fn api(code: u16) -> ApiError {
-        ApiError {
-            code,
-            message: String::new(),
-        }
+        ApiError::train(code, String::new())
     }
 
     /// The CTA code each named kind comes from. The exhaustive `match`
@@ -387,21 +568,83 @@ mod tests {
     #[test]
     fn code_is_kept_for_other() {
         // Nothing is lost when a code has no named kind.
-        let e = ApiError {
-            code: 104,
-            message: "Something new".into(),
-        };
+        let e = ApiError::train(104, "Something new".into());
         assert_eq!(e.kind(), ApiErrorKind::Other);
-        assert_eq!(e.code, 104);
-        assert_eq!(e.to_string(), "CTA API error 104: Something new");
+        assert_eq!(e.code, Some(104));
+        assert_eq!(e.to_string(), "Train Tracker error 104: Something new");
     }
 
     #[test]
     fn display_includes_code_and_message() {
+        let e = ApiError::train(101, "Invalid API key".into());
+        assert_eq!(e.to_string(), "Train Tracker error 101: Invalid API key");
+    }
+
+    #[test]
+    fn bus_messages_map_to_kinds() {
+        for (message, kind) in [
+            ("Invalid API access key supplied", ApiErrorKind::InvalidKey),
+            (
+                "Transaction limit for current day has been exceeded.",
+                ApiErrorKind::DailyLimitExceeded,
+            ),
+            (
+                "Internal server error - Unable to complete request at this time",
+                ApiErrorKind::ServerError,
+            ),
+            ("No data found for parameter", ApiErrorKind::Other),
+            ("Something new", ApiErrorKind::Other),
+        ] {
+            assert_eq!(ApiError::bus(message.into()).kind(), kind, "{message}");
+        }
+    }
+
+    #[test]
+    fn bus_codes_are_ignored() {
+        // A Bus Tracker error is never classified by a train code.
         let e = ApiError {
-            code: 101,
-            message: "Invalid API key".into(),
+            api: Api::Bus,
+            code: Some(101),
+            message: "Something new".into(),
         };
-        assert_eq!(e.to_string(), "CTA API error 101: Invalid API key");
+        assert_eq!(e.kind(), ApiErrorKind::Other);
+    }
+
+    #[test]
+    fn alerts_codes_are_not_train_codes() {
+        // 101 is an invalid key for Train Tracker, but an invalid `type` for Customer Alerts.
+        assert_eq!(
+            ApiError::train(101, String::new()).kind(),
+            ApiErrorKind::InvalidKey
+        );
+        assert_eq!(
+            ApiError::alerts(101, String::new()).kind(),
+            ApiErrorKind::Other
+        );
+        assert_eq!(
+            ApiError::alerts(900, String::new()).kind(),
+            ApiErrorKind::ServerError
+        );
+        for code in [100, 102, 103, 104, 105, 106, 107, 500] {
+            assert_eq!(
+                ApiError::alerts(code, String::new()).kind(),
+                ApiErrorKind::Other,
+                "{code}"
+            );
+        }
+        assert_eq!(
+            ApiError::alerts(900, "Server Error".into()).to_string(),
+            "Customer Alerts error 900: Server Error"
+        );
+    }
+
+    #[test]
+    fn bus_display_has_no_code() {
+        let e = ApiError::bus("Invalid API access key supplied".into());
+        assert_eq!(e.code, None);
+        assert_eq!(
+            e.to_string(),
+            "Bus Tracker error: Invalid API access key supplied"
+        );
     }
 }
