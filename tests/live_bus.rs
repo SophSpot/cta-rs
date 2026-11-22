@@ -9,7 +9,7 @@ fn api_key() -> String {
 #[cfg(feature = "reqwest")]
 mod with_reqwest {
     use super::api_key;
-    use cta::buses::{Direction, DirectionsQuery, LocalesQuery, RoutesQuery};
+    use cta::buses::{Direction, DirectionsQuery, LocalesQuery, RoutesQuery, StopId, StopsQuery};
     use cta::client::AsyncClient;
     use cta::{Api, ApiErrorKind, Error};
 
@@ -67,6 +67,35 @@ mod with_reqwest {
 
     #[tokio::test]
     #[ignore = "hits the live CTA API"]
+    async fn stops_for_route() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        let stops = client
+            .buses()
+            .stops(&StopsQuery::route("20", Direction::Westbound))
+            .await
+            .expect("request should succeed");
+        assert!(
+            stops.iter().any(|s| s.id == StopId(456)),
+            "Madison & Jefferson should be on westbound 20: {stops:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
+    async fn unknown_stop_ids_are_left_out() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        let query = StopsQuery::stops([StopId(456), StopId(999_999)]).unwrap();
+        let stops = client
+            .buses()
+            .stops(&query)
+            .await
+            .expect("an unknown stop is left out, not an error");
+        let ids: Vec<_> = stops.iter().map(|s| s.id).collect();
+        assert_eq!(ids, [StopId(456)]);
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
     async fn locales() {
         let client = AsyncClient::builder().bus_key(api_key()).build();
         let locales = client
@@ -98,7 +127,7 @@ mod with_reqwest {
 #[cfg(feature = "ureq")]
 mod with_ureq {
     use super::api_key;
-    use cta::buses::{DirectionsQuery, LocalesQuery, RoutesQuery};
+    use cta::buses::{DirectionsQuery, LocalesQuery, RoutesQuery, StopId, StopsQuery};
     use cta::client::BlockingClient;
     use cta::{ApiErrorKind, Error};
 
@@ -118,6 +147,17 @@ mod with_ureq {
             .routes(&RoutesQuery::all())
             .expect("request should succeed");
         assert!(!routes.is_empty());
+    }
+
+    #[test]
+    #[ignore = "hits the live CTA API"]
+    fn stops() {
+        let client = BlockingClient::builder().bus_key(api_key()).build();
+        let stops = client
+            .buses()
+            .stops(&StopsQuery::at(StopId(456)))
+            .expect("request should succeed");
+        assert_eq!(stops.len(), 1);
     }
 
     #[test]

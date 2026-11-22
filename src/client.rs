@@ -75,6 +75,7 @@ struct TimeCall;
 struct RoutesCall<'a>(&'a buses::RoutesQuery);
 struct DirectionsCall<'a>(&'a buses::DirectionsQuery);
 struct LocalesCall<'a>(&'a buses::LocalesQuery);
+struct StopsCall<'a>(&'a buses::StopsQuery);
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -139,6 +140,17 @@ impl Endpoint for DirectionsCall<'_> {
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         buses::parse_directions(body)
+    }
+}
+
+impl Endpoint for StopsCall<'_> {
+    type Output = Vec<buses::Stop>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::stops_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_stops(body)
     }
 }
 
@@ -451,6 +463,30 @@ impl<H: AsyncHttpClient> Buses<'_, H> {
         self.client.call(DirectionsCall(query)).await
     }
 
+    /// Stops on a route in one direction, or stops by ID.
+    ///
+    /// Stops for a route come in no particular order. Stop IDs that don't exist or have
+    /// no service are left out rather than reported as errors.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::{Direction, StopsQuery};
+    ///
+    /// let query = StopsQuery::route("20", Direction::Eastbound);
+    /// for s in client.buses().stops(&query).await? {
+    ///     println!("{:>5}  {}", s.id, s.name);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn stops(
+        &self,
+        query: &buses::StopsQuery,
+    ) -> Result<Vec<buses::Stop>, Error<H::Error>> {
+        self.client.call(StopsCall(query)).await
+    }
+
     /// The languages Bus Tracker accepts, for a query's `locale` method.
     ///
     /// See [`Locale`](buses::Locale) for what CTA translates today.
@@ -615,6 +651,13 @@ impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
         self.client.call(DirectionsCall(query))
     }
 
+    /// Stops on a route in one direction, or stops by ID.
+    ///
+    /// See [`Buses::stops`].
+    pub fn stops(&self, query: &buses::StopsQuery) -> Result<Vec<buses::Stop>, Error<H::Error>> {
+        self.client.call(StopsCall(query))
+    }
+
     /// The languages Bus Tracker accepts, for a query's `locale` method.
     ///
     /// See [`Buses::locales`].
@@ -669,6 +712,7 @@ mod tests {
     const BUS_ROUTES: &[u8] = include_bytes!("../tests/fixtures/bus_routes.json");
     const BUS_DIRECTIONS: &[u8] = include_bytes!("../tests/fixtures/bus_directions_20.json");
     const BUS_LOCALES: &[u8] = include_bytes!("../tests/fixtures/bus_locales_native.json");
+    const BUS_STOPS: &[u8] = include_bytes!("../tests/fixtures/bus_stops_by_id.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -921,6 +965,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn async_bus_stops() {
+        let http = FakeHttp::ok(BUS_STOPS);
+        let query = buses::StopsQuery::stops([buses::StopId(456), buses::StopId(1577)]).unwrap();
+        let stops = async_bus_client(http.clone())
+            .buses()
+            .stops(&query)
+            .await
+            .unwrap();
+        assert_eq!(stops.len(), 1);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getstops");
+        assert_eq!(url.query(), Some("key=k&stpid=456%2C1577&format=json"));
+    }
+
+    #[tokio::test]
     async fn async_bus_locales() {
         let http = FakeHttp::ok(BUS_LOCALES);
         let locales = async_bus_client(http.clone())
@@ -1013,6 +1072,21 @@ mod tests {
             .unwrap();
         assert_eq!(routes.len(), 125);
         assert_eq!(http.last_url().path(), "/bustime/api/v3/getroutes");
+    }
+
+    #[test]
+    fn blocking_bus_stops() {
+        let http = FakeHttp::ok(BUS_STOPS);
+        let query = buses::StopsQuery::route("20", buses::Direction::Westbound);
+        let stops = blocking_bus_client(http.clone())
+            .buses()
+            .stops(&query)
+            .unwrap();
+        assert_eq!(stops[0].id, buses::StopId(456));
+        assert_eq!(
+            http.last_url().query(),
+            Some("key=k&rt=20&dir=Westbound&format=json")
+        );
     }
 
     #[test]

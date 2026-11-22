@@ -11,11 +11,13 @@
 mod directions;
 mod locales;
 mod routes;
+mod stops;
 mod time;
 
 pub use directions::{DirectionInfo, DirectionsQuery, directions_request, parse_directions};
 pub use locales::{LocaleInfo, LocalesQuery, locales_request, parse_locales};
 pub use routes::{RouteInfo, RoutesQuery, parse_routes, routes_request};
+pub use stops::{Stop, StopsQuery, parse_stops, stops_request};
 pub use time::{parse_time, time_request};
 
 use crate::deserializers::one_or_many;
@@ -228,6 +230,100 @@ impl Display for Locale {
     }
 }
 
+/// A bus stop ID (`stpid`), such as `456` for Madison & Jefferson.
+///
+/// Bus stop IDs are a different set from Train Tracker's
+/// [`trains::StopId`](crate::trains::StopId).
+///
+/// ```
+/// use cta::buses::StopId;
+///
+/// assert_eq!(StopId(456).to_string(), "456");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct StopId(pub u32);
+
+impl Display for StopId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+/// A detour's ID, such as `"8A3D8B0D-D95E-4621-BAF8-E969867256B5"`.
+///
+/// Stops list the detours that add or remove them, and the same ID identifies the
+/// detour elsewhere in Bus Tracker. The ID is kept exactly as Bus Tracker sent it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(transparent)
+)]
+pub struct DetourId(pub String);
+
+impl DetourId {
+    /// A detour ID with this text.
+    pub fn new(id: impl Into<String>) -> Self {
+        DetourId(id.into())
+    }
+
+    /// The ID's text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for DetourId {
+    fn from(id: &str) -> Self {
+        DetourId::new(id)
+    }
+}
+
+impl From<String> for DetourId {
+    fn from(id: String) -> Self {
+        DetourId(id)
+    }
+}
+
+impl Display for DetourId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.pad(&self.0)
+    }
+}
+
+/// A query Bus Tracker would reject, caught before any request is sent.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum QueryError {
+    /// A stops query was given no stop IDs.
+    #[error("a stops query needs at least one stop ID")]
+    NoStops,
+    /// More stop IDs than Bus Tracker accepts in one request.
+    #[error("too many stops: {0} (Bus Tracker accepts at most 10)")]
+    TooManyStops(usize),
+}
+
+/// Remove duplicates, keeping the first occurrence.
+fn dedup<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut out = Vec::new();
+    for item in items {
+        if !out.contains(&item) {
+            out.push(item);
+        }
+    }
+    out
+}
+
+/// Join IDs with commas, e.g. `456,4727`.
+fn join<T: Display>(items: &[T]) -> String {
+    items
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// Add `locale=<code>` to `url` if a locale was chosen.
 fn append_locale(url: &mut Url, locale: Option<&Locale>) {
     if let Some(locale) = locale {
@@ -348,6 +444,22 @@ mod tests {
         assert_eq!(Locale::from("es"), Locale::new("es"));
         assert_eq!(Locale::from(String::from("es")), Locale("es".into()));
         assert_eq!(Locale::from("es").to_string(), "es");
+    }
+
+    #[test]
+    fn ids_display_as_given() {
+        assert_eq!(StopId(456).to_string(), "456");
+        let id = "8A3D8B0D-D95E-4621-BAF8-E969867256B5";
+        assert_eq!(DetourId::from(id).as_str(), id);
+        assert_eq!(DetourId::from(id).to_string(), id);
+        assert_eq!(DetourId::from(id), DetourId::new(String::from(id)));
+    }
+
+    #[test]
+    fn dedup_keeps_first_and_join_uses_commas() {
+        assert_eq!(dedup([3, 1, 3, 2, 1]), [3, 1, 2]);
+        assert_eq!(join(&[StopId(456), StopId(4727)]), "456,4727");
+        assert_eq!(join::<StopId>(&[]), "");
     }
 
     #[test]

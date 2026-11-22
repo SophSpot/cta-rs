@@ -1,0 +1,402 @@
+{
+	"bustime-response": {
+		"stops": [
+			{
+				"stpid": "4727",
+				"stpnm": "1633 W Madison",
+				"lat": 41.881377,
+				"lon": -87.668502999999
+			},
+			{
+				"stpid": "8613",
+				"stpnm": "Columbus & Randolph",
+				"lat": 41.884759999999,
+				"lon": -87.620833999999
+			},
+			{
+				"stpid": "440",
+				"stpnm": "Halsted & Madison",
+				"lat": 41.882144000001,
+				"lon": -87.647291000001
+			},
+			{
+				"stpid": "437",
+				"stpnm": "Madison & Aberdeen ",
+				"lat": 41.881583,
+				"lon": -87.654884999999
+			},
+			{
+				"stpid": "417",
+				"stpnm": "Madison & Albany ",
+				"lat": 41.880938,
+				"lon": -87.703142000002
+			},
+			{
+				"stpid": "432",
+				"stpnm": "Madison & Ashland",
+				"lat": 41.881366999999,
+				"lon": -87.667081
+			},
+			{
+				"stpid": "386",
+				"stpnm": "Madison & Austin Terminal",
+				"lat": 41.880368999999,
+				"lon": -87.774048999999
+			},
+			{
+				"stpid": "420",
+				"stpnm": "Madison & California",
+				"lat": 41.881002999999,
+				"lon": -87.695877000001
+			},
+			{
+				"stpid": "423",
+				"stpnm": "Madison & Campbell ",
+				"lat": 41.881041999999,
+				"lon": -87.689042000002
+			},
+			{
+				"stpid": "14956",
+				"stpnm": "Madison & Central",
+				"lat": 41.880136999999,
+				"lon": -87.764255000001
+			},
+			{
+				"stpid": "18869",
+				"stpnm": "Madison & Central Park",
+				"lat": 41.880791,
+				"lon": -87.715462000002
+			},
+			{
+				"stpid": "14959",
+				"stpnm": "Madison & Cicero",
+				"lat": 41.880383000001,
+				"lon": -87.744862999998
+			},
+			{
+				"stpid": "428",
+				"stpnm": "Madison & Damen",
+				"lat": 41.881224000001,
+				"lon": -87.676835000001
+			},
+			{
+				"stpid": "16110",
+				"stpnm": "Madison & Francisco",
+				"lat": 41.880978000001,
+				"lon": -87.698357000001
+			},
+			{
+				"stpid": "17841",
+				"stpnm": "Madison & Hamlin",
+				"lat": 41.880803,
+				"lon": -87.720227999998
+			},
+			{
+				"stpid": "14764",
+				"stpnm": "Madison & Homan",
+				"lat": 41.880923,
+				"lon": -87.710562999998
+			},
+			{
+				"stpid": "427",
+				"stpnm": "Madison & Hoyne",
+				"lat": 41.881191999999,
+				"lon": -87.679266
+			},
+			{
+				"stpid": "15852",
+				"stpnm": "Madison & Karlov",
+				"lat": 41.880613,
+				"lon": -87.727698000001
+			},
+			{
+				"stpid": "416",
+				"stpnm": "Madison & Kedzie",
+				"lat": 41.880907000001,
+				"lon": -87.706320000001
+			},
+			{
+				"stpid": "14500",
+				"stpnm": "Madison & Keeler",
+				"lat": 41.880604999999,
+				"lon": -87.730702000001
+			},
+			{
+				"stpid": "403",
+				"stpnm": "Madison & Kenton",
+				"lat": 41.880424,
+				"lon": -87.740762
+			},
+			{
+				"stpid": "17163",
+				"stpnm": "Madison & Kilbourn",
+				"lat": 41.880509999999,
+				"lon": -87.737585000001
+			},
+			{
+				"stpid": "15850",
+				"stpnm": "Madison & Kildare",
+				"lat": 41.880538,
+				"lon": -87.732447000001
+			},
+			{
+				"stpid": "402",
+				"stpnm": "Madison & Kilpatrick",
+				"lat": 41.880425000001,
+				"lon": -87.743016
+			},
+			{
+				"stpid": "15848",
+				"stpnm": "Madison & Kostner",
+				"lat": 41.880526999999,
+				"lon": -87.735088000001
+			},
+			{
+				"stpid": "15279",
+				"stpnm": "Madison & Laflin",
+				"lat": 41.881472,
+				"lon": -87.663993000001
+			},
+			{
+				"stpid": "397",
+				"stpnm": "Madison & Laramie",
+				"lat": 41.880262999999,
+				"lon": -87.755323000001
+			},
+			{
+				"stpid": "17162",
+				"stpnm": "Madison & Lavergne",
+				"lat": 41.880407,
+				"lon": -87.749060000002
+			},
+			{
+				"stpid": "15384",
+				"stpnm": "Madison & Leavitt",
+				"lat": 41.881185,
+				"lon": -87.68119
+			},
+			{
+				"stpid": "17169",
+				"stpnm": "Madison & Leclaire",
+				"lat": 41.88028,
+				"lon": -87.752398
+			},
+			{
+				"stpid": "396",
+				"stpnm": "Madison & Lockwood ",
+				"lat": 41.880303,
+				"lon": -87.757832999999
+			},
+			{
+				"stpid": "395",
+				"stpnm": "Madison & Long",
+				"lat": 41.880279999999,
+				"lon": -87.760028
+			},
+			{
+				"stpid": "16049",
+				"stpnm": "Madison & Loomis ",
+				"lat": 41.881411,
+				"lon": -87.662232
+			},
+			{
+				"stpid": "394",
+				"stpnm": "Madison & Lotus ",
+				"lat": 41.880255000001,
+				"lon": -87.761998000001
+			},
+			{
+				"stpid": "388",
+				"stpnm": "Madison & Mayfield",
+				"lat": 41.880065000001,
+				"lon": -87.771567000001
+			},
+			{
+				"stpid": "389",
+				"stpnm": "Madison & Menard",
+				"lat": 41.880112999999,
+				"lon": -87.769977999999
+			},
+			{
+				"stpid": "14647",
+				"stpnm": "Madison & Morgan",
+				"lat": 41.881646,
+				"lon": -87.651741000002
+			},
+			{
+				"stpid": "425",
+				"stpnm": "Madison & Oakley",
+				"lat": 41.881177999999,
+				"lon": -87.683567000001
+			},
+			{
+				"stpid": "391",
+				"stpnm": "Madison & Parkside",
+				"lat": 41.880177000001,
+				"lon": -87.76664
+			},
+			{
+				"stpid": "431",
+				"stpnm": "Madison & Paulina",
+				"lat": 41.881363000001,
+				"lon": -87.669516000001
+			},
+			{
+				"stpid": "439",
+				"stpnm": "Madison & Peoria",
+				"lat": 41.881681000001,
+				"lon": -87.649890000001
+			},
+			{
+				"stpid": "409",
+				"stpnm": "Madison & Pulaski",
+				"lat": 41.880677000001,
+				"lon": -87.725789999999
+			},
+			{
+				"stpid": "436",
+				"stpnm": "Madison & Racine ",
+				"lat": 41.881520000001,
+				"lon": -87.657316999999
+			},
+			{
+				"stpid": "15185",
+				"stpnm": "Madison & Sacramento",
+				"lat": 41.880978,
+				"lon": -87.700837000001
+			},
+			{
+				"stpid": "415",
+				"stpnm": "Madison & Spaulding",
+				"lat": 41.880892,
+				"lon": -87.708702999999
+			},
+			{
+				"stpid": "18047",
+				"stpnm": "Madison & Springfield",
+				"lat": 41.880724999999,
+				"lon": -87.723030999999
+			},
+			{
+				"stpid": "413",
+				"stpnm": "Madison & St. Louis",
+				"lat": 41.880851999999,
+				"lon": -87.713822000002
+			},
+			{
+				"stpid": "16088",
+				"stpnm": "Madison & Talman",
+				"lat": 41.881067000001,
+				"lon": -87.69238
+			},
+			{
+				"stpid": "435",
+				"stpnm": "Madison & Throop ",
+				"lat": 41.881472,
+				"lon": -87.65978
+			},
+			{
+				"stpid": "429",
+				"stpnm": "Madison & United Center (1900 W)",
+				"lat": 41.881256000001,
+				"lon": -87.674733
+			},
+			{
+				"stpid": "390",
+				"stpnm": "Madison & Waller",
+				"lat": 41.880145,
+				"lon": -87.768276999999
+			},
+			{
+				"stpid": "421",
+				"stpnm": "Madison & Washtenaw",
+				"lat": 41.881058000001,
+				"lon": -87.694192000001
+			},
+			{
+				"stpid": "15364",
+				"stpnm": "Madison & Western",
+				"lat": 41.881113,
+				"lon": -87.685917999999
+			},
+			{
+				"stpid": "430",
+				"stpnm": "Madison & Wood",
+				"lat": 41.881339999999,
+				"lon": -87.671939000001
+			},
+			{
+				"stpid": "1121",
+				"stpnm": "Michigan & E. Wacker",
+				"lat": 41.887877,
+				"lon": -87.624423999999
+			},
+			{
+				"stpid": "1119",
+				"stpnm": "Michigan & Randolph",
+				"lat": 41.885131999999,
+				"lon": -87.624334
+			},
+			{
+				"stpid": "1120",
+				"stpnm": "Michigan & South Water",
+				"lat": 41.886527999999,
+				"lon": -87.624407
+			},
+			{
+				"stpid": "3954",
+				"stpnm": "Wacker (Upper) & Columbus",
+				"lat": 41.887852,
+				"lon": -87.621030999999
+			},
+			{
+				"stpid": "443",
+				"stpnm": "Washington & Canal",
+				"lat": 41.883087,
+				"lon": -87.640023999999
+			},
+			{
+				"stpid": "18122",
+				"stpnm": "Washington & Clark/Dearborn",
+				"lat": 41.883183,
+				"lon": -87.630320000001
+			},
+			{
+				"stpid": "445",
+				"stpnm": "Washington & Franklin",
+				"lat": 41.883169,
+				"lon": -87.635649000001
+			},
+			{
+				"stpid": "12754",
+				"stpnm": "Washington & Halsted",
+				"lat": 41.883107999999,
+				"lon": -87.646762999999
+			},
+			{
+				"stpid": "442",
+				"stpnm": "Washington & Jefferson",
+				"lat": 41.883089,
+				"lon": -87.642899
+			},
+			{
+				"stpid": "446",
+				"stpnm": "Washington & Lasalle",
+				"lat": 41.883179000001,
+				"lon": -87.632815999998
+			},
+			{
+				"stpid": "448",
+				"stpnm": "Washington & State",
+				"lat": 41.883203,
+				"lon": -87.627293
+			},
+			{
+				"stpid": "449",
+				"stpnm": "Washington & Wabash",
+				"lat": 41.883204999999,
+				"lon": -87.625569
+			}
+		]
+	}
+}

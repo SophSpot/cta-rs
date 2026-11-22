@@ -1,0 +1,587 @@
+{
+	"bustime-response": {
+		"stops": [
+			{
+				"stpid": "8269",
+				"stpnm": "4102 S Western",
+				"lat": 41.819245999999,
+				"lon": -87.684826999999
+			},
+			{
+				"stpid": "8307",
+				"stpnm": "79th & Western Terminal",
+				"lat": 41.750762,
+				"lon": -87.682551999999
+			},
+			{
+				"stpid": "8863",
+				"stpnm": "Damen & Carroll",
+				"lat": 41.887789999999,
+				"lon": -87.676866999998,
+				"dtradd": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5"
+				]
+			},
+			{
+				"stpid": "14962",
+				"stpnm": "Damen & Lake (Green Line)",
+				"lat": 41.884602999999,
+				"lon": -87.676787999999,
+				"dtradd": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5"
+				]
+			},
+			{
+				"stpid": "725",
+				"stpnm": "Grand & Damen",
+				"lat": 41.890808999999,
+				"lon": -87.677069,
+				"dtradd": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5"
+				]
+			},
+			{
+				"stpid": "724",
+				"stpnm": "Grand & Hoyne",
+				"lat": 41.890738000001,
+				"lon": -87.679506000001,
+				"dtradd": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5"
+				]
+			},
+			{
+				"stpid": "723",
+				"stpnm": "Grand & Leavitt",
+				"lat": 41.890698999999,
+				"lon": -87.681961999999,
+				"dtradd": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5"
+				]
+			},
+			{
+				"stpid": "18646",
+				"stpnm": "Grand & Oakley",
+				"lat": 41.890620000001,
+				"lon": -87.683968,
+				"dtradd": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5"
+				]
+			},
+			{
+				"stpid": "18645",
+				"stpnm": "Grand & Western (Metra MD-N/MD-W/NCS)",
+				"lat": 41.890572000001,
+				"lon": -87.686351999999,
+				"dtradd": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5",
+					"5950B28F-2CDB-4242-BDAC-B72BDB28F8F2"
+				]
+			},
+			{
+				"stpid": "8245",
+				"stpnm": "Western & 14th Street",
+				"lat": 41.862646,
+				"lon": -87.686067000001
+			},
+			{
+				"stpid": "14531",
+				"stpnm": "Western & 16th Street",
+				"lat": 41.858999000001,
+				"lon": -87.685955000001
+			},
+			{
+				"stpid": "8249",
+				"stpnm": "Western & 18th Street (Metra BNSF)",
+				"lat": 41.856754000001,
+				"lon": -87.685899000002
+			},
+			{
+				"stpid": "8255",
+				"stpnm": "Western & 24th Street",
+				"lat": 41.848516,
+				"lon": -87.685672999998
+			},
+			{
+				"stpid": "8257",
+				"stpnm": "Western & 26th Street",
+				"lat": 41.844974000001,
+				"lon": -87.685598
+			},
+			{
+				"stpid": "8259",
+				"stpnm": "Western & 28th Street",
+				"lat": 41.841476,
+				"lon": -87.685425000001
+			},
+			{
+				"stpid": "8260",
+				"stpnm": "Western & 31st Street",
+				"lat": 41.839160999999,
+				"lon": -87.685364000001
+			},
+			{
+				"stpid": "8262",
+				"stpnm": "Western & 33rd Street",
+				"lat": 41.834119999999,
+				"lon": -87.684758999998
+			},
+			{
+				"stpid": "8264",
+				"stpnm": "Western & 35th Street",
+				"lat": 41.830434000001,
+				"lon": -87.685148000001
+			},
+			{
+				"stpid": "8271",
+				"stpnm": "Western & 43rd Street",
+				"lat": 41.815852999999,
+				"lon": -87.684735999999
+			},
+			{
+				"stpid": "15743",
+				"stpnm": "Western & 45th Street",
+				"lat": 41.811786999999,
+				"lon": -87.684635000002
+			},
+			{
+				"stpid": "8275",
+				"stpnm": "Western & 47th Street",
+				"lat": 41.808563,
+				"lon": -87.684570000001
+			},
+			{
+				"stpid": "8279",
+				"stpnm": "Western & 51st Street",
+				"lat": 41.801273,
+				"lon": -87.684325999998
+			},
+			{
+				"stpid": "8281",
+				"stpnm": "Western & 53rd Street",
+				"lat": 41.797627,
+				"lon": -87.684254999999
+			},
+			{
+				"stpid": "8283",
+				"stpnm": "Western & 55th Street/Garfield",
+				"lat": 41.794013999999,
+				"lon": -87.684189999999
+			},
+			{
+				"stpid": "15143",
+				"stpnm": "Western & 57th Street",
+				"lat": 41.789875,
+				"lon": -87.684072999999
+			},
+			{
+				"stpid": "14578",
+				"stpnm": "Western & 59th Street",
+				"lat": 41.786068000001,
+				"lon": -87.683972000002
+			},
+			{
+				"stpid": "8289",
+				"stpnm": "Western & 61st Street",
+				"lat": 41.783041,
+				"lon": -87.683891
+			},
+			{
+				"stpid": "18302",
+				"stpnm": "Western & 62nd Street",
+				"lat": 41.780782000001,
+				"lon": -87.683827999999
+			},
+			{
+				"stpid": "14576",
+				"stpnm": "Western & 63rd Street",
+				"lat": 41.778915999999,
+				"lon": -87.683774999999
+			},
+			{
+				"stpid": "14857",
+				"stpnm": "Western & 65th Street",
+				"lat": 41.775137999999,
+				"lon": -87.683671999998
+			},
+			{
+				"stpid": "8294",
+				"stpnm": "Western & 66th Street",
+				"lat": 41.773934000001,
+				"lon": -87.683643000001
+			},
+			{
+				"stpid": "8297",
+				"stpnm": "Western & 69th Street",
+				"lat": 41.768456000001,
+				"lon": -87.683496000002
+			},
+			{
+				"stpid": "8299",
+				"stpnm": "Western & 71st Street",
+				"lat": 41.76485,
+				"lon": -87.683410000001
+			},
+			{
+				"stpid": "15783",
+				"stpnm": "Western & 73rd Street",
+				"lat": 41.760779999999,
+				"lon": -87.683301000001
+			},
+			{
+				"stpid": "8304",
+				"stpnm": "Western & 76th Street ",
+				"lat": 41.755503999999,
+				"lon": -87.683139999999
+			},
+			{
+				"stpid": "8305",
+				"stpnm": "Western & 77th Street",
+				"lat": 41.753940999999,
+				"lon": -87.683097000001
+			},
+			{
+				"stpid": "18297",
+				"stpnm": "Western & Adams",
+				"lat": 41.878275,
+				"lon": -87.686499000001
+			},
+			{
+				"stpid": "8195",
+				"stpnm": "Western & Addison",
+				"lat": 41.946307,
+				"lon": -87.688388000001
+			},
+			{
+				"stpid": "16085",
+				"stpnm": "Western & Archer",
+				"lat": 41.825428999999,
+				"lon": -87.684996000001
+			},
+			{
+				"stpid": "8212",
+				"stpnm": "Western & Armitage",
+				"lat": 41.917698,
+				"lon": -87.687550000002
+			},
+			{
+				"stpid": "8223",
+				"stpnm": "Western & Augusta",
+				"lat": 41.899044000001,
+				"lon": -87.687064000001
+			},
+			{
+				"stpid": "8200",
+				"stpnm": "Western & Barry",
+				"lat": 41.937783000001,
+				"lon": -87.688167000001
+			},
+			{
+				"stpid": "8208",
+				"stpnm": "Western & Belden",
+				"lat": 41.923458000001,
+				"lon": -87.687737999998
+			},
+			{
+				"stpid": "18437",
+				"stpnm": "Western & Belle Plaine",
+				"lat": 41.955682,
+				"lon": -87.688666
+			},
+			{
+				"stpid": "18331",
+				"stpnm": "Western & Belmont",
+				"lat": 41.939056,
+				"lon": -87.688189999999
+			},
+			{
+				"stpid": "8189",
+				"stpnm": "Western & Berteau",
+				"lat": 41.957825999999,
+				"lon": -87.688722999999
+			},
+			{
+				"stpid": "14529",
+				"stpnm": "Western & Berwyn",
+				"lat": 41.977426999999,
+				"lon": -87.689345000001
+			},
+			{
+				"stpid": "14182",
+				"stpnm": "Western & Berwyn Terminal",
+				"lat": 41.978501000001,
+				"lon": -87.689594000001
+			},
+			{
+				"stpid": "14555",
+				"stpnm": "Western & Cermak",
+				"lat": 41.851649999999,
+				"lon": -87.685763000001
+			},
+			{
+				"stpid": "8225",
+				"stpnm": "Western & Chicago",
+				"lat": 41.895896000001,
+				"lon": -87.686982000002
+			},
+			{
+				"stpid": "8302",
+				"stpnm": "Western & Columbus",
+				"lat": 41.7587,
+				"lon": -87.683224
+			},
+			{
+				"stpid": "8214",
+				"stpnm": "Western & Cortland (Blue Line)",
+				"lat": 41.915875,
+				"lon": -87.687504000001
+			},
+			{
+				"stpid": "18762",
+				"stpnm": "Western & Division",
+				"lat": 41.90277,
+				"lon": -87.687162000001
+			},
+			{
+				"stpid": "14585",
+				"stpnm": "Western & Elston/Diversey",
+				"lat": 41.931610999999,
+				"lon": -87.688033000001
+			},
+			{
+				"stpid": "18311",
+				"stpnm": "Western & Foster",
+				"lat": 41.975573000001,
+				"lon": -87.689296999998
+			},
+			{
+				"stpid": "8207",
+				"stpnm": "Western & Fullerton",
+				"lat": 41.925071,
+				"lon": -87.687792000002
+			},
+			{
+				"stpid": "18299",
+				"stpnm": "Western & Fulton",
+				"lat": 41.886397,
+				"lon": -87.686722,
+				"dtrrem": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5"
+				]
+			},
+			{
+				"stpid": "8193",
+				"stpnm": "Western & Grace",
+				"lat": 41.950518,
+				"lon": -87.688504999999
+			},
+			{
+				"stpid": "8228",
+				"stpnm": "Western & Grand",
+				"lat": 41.89079,
+				"lon": -87.686843,
+				"dtrrem": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5",
+					"5950B28F-2CDB-4242-BDAC-B72BDB28F8F2"
+				]
+			},
+			{
+				"stpid": "14769",
+				"stpnm": "Western & Harrison",
+				"lat": 41.873605999999,
+				"lon": -87.686370000002
+			},
+			{
+				"stpid": "18313",
+				"stpnm": "Western & Hirsch",
+				"lat": 41.906387999999,
+				"lon": -87.687257999999
+			},
+			{
+				"stpid": "15344",
+				"stpnm": "Western & Hubbard (Metra MD-N/MD-W/NCS)",
+				"lat": 41.889255,
+				"lon": -87.686794999999,
+				"dtrrem": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5"
+				]
+			},
+			{
+				"stpid": "8226",
+				"stpnm": "Western & Huron",
+				"lat": 41.893670000001,
+				"lon": -87.686922999999
+			},
+			{
+				"stpid": "8224",
+				"stpnm": "Western & Iowa",
+				"lat": 41.897250999999,
+				"lon": -87.687025999999
+			},
+			{
+				"stpid": "14964",
+				"stpnm": "Western & Irving Park",
+				"lat": 41.953466999999,
+				"lon": -87.688594999999
+			},
+			{
+				"stpid": "18298",
+				"stpnm": "Western & Jackson",
+				"lat": 41.877223999999,
+				"lon": -87.686496
+			},
+			{
+				"stpid": "8231",
+				"stpnm": "Western & Lake",
+				"lat": 41.884361999999,
+				"lon": -87.686664,
+				"dtrrem": [
+					"8A3D8B0D-D95E-4621-BAF8-E969867256B5"
+				]
+			},
+			{
+				"stpid": "14591",
+				"stpnm": "Western & Lawrence",
+				"lat": 41.968306999999,
+				"lon": -87.689056999998
+			},
+			{
+				"stpid": "17343",
+				"stpnm": "Western & Le Moyne",
+				"lat": 41.908205,
+				"lon": -87.687306999999
+			},
+			{
+				"stpid": "8184",
+				"stpnm": "Western & Leland (Brown Line)",
+				"lat": 41.966459000001,
+				"lon": -87.688986000002
+			},
+			{
+				"stpid": "8205",
+				"stpnm": "Western & Logan/Jones",
+				"lat": 41.928938,
+				"lon": -87.687947999998
+			},
+			{
+				"stpid": "14546",
+				"stpnm": "Western & Madison",
+				"lat": 41.880870000001,
+				"lon": -87.686566999999
+			},
+			{
+				"stpid": "14823",
+				"stpnm": "Western & Marquette Rd",
+				"lat": 41.771713999999,
+				"lon": -87.683579
+			},
+			{
+				"stpid": "8187",
+				"stpnm": "Western & Montrose",
+				"lat": 41.961452999999,
+				"lon": -87.688836000001
+			},
+			{
+				"stpid": "14581",
+				"stpnm": "Western & North Ave",
+				"lat": 41.909981000001,
+				"lon": -87.687355000001
+			},
+			{
+				"stpid": "8210",
+				"stpnm": "Western & Palmer ",
+				"lat": 41.921746999999,
+				"lon": -87.687683999998
+			},
+			{
+				"stpid": "14575",
+				"stpnm": "Western & Pershing",
+				"lat": 41.822608999999,
+				"lon": -87.684958000001
+			},
+			{
+				"stpid": "17312",
+				"stpnm": "Western & Polk",
+				"lat": 41.870893,
+				"lon": -87.686296999999
+			},
+			{
+				"stpid": "14554",
+				"stpnm": "Western & Roosevelt",
+				"lat": 41.866241999999,
+				"lon": -87.686165999999
+			},
+			{
+				"stpid": "18346",
+				"stpnm": "Western & Roscoe",
+				"lat": 41.942852,
+				"lon": -87.688291
+			},
+			{
+				"stpid": "17889",
+				"stpnm": "Western & Schubert",
+				"lat": 41.930013000001,
+				"lon": -87.687975999998
+			},
+			{
+				"stpid": "8215",
+				"stpnm": "Western & St. Paul",
+				"lat": 41.913422,
+				"lon": -87.687441000001
+			},
+			{
+				"stpid": "17607",
+				"stpnm": "Western & Sunnyside",
+				"lat": 41.962905000001,
+				"lon": -87.688872999998
+			},
+			{
+				"stpid": "15345",
+				"stpnm": "Western & Taylor ",
+				"lat": 41.869097000001,
+				"lon": -87.686247000001
+			},
+			{
+				"stpid": "8222",
+				"stpnm": "Western & Thomas",
+				"lat": 41.901333999999,
+				"lon": -87.687127
+			},
+			{
+				"stpid": "8233",
+				"stpnm": "Western & Warren",
+				"lat": 41.882221999999,
+				"lon": -87.686610000001
+			},
+			{
+				"stpid": "8185",
+				"stpnm": "Western & Wilson",
+				"lat": 41.964993,
+				"lon": -87.688938999998
+			},
+			{
+				"stpid": "1719",
+				"stpnm": "Western & Winnemac",
+				"lat": 41.973133999999,
+				"lon": -87.689206999999
+			},
+			{
+				"stpid": "8239",
+				"stpnm": "Western Blue Line Station",
+				"lat": 41.875502,
+				"lon": -87.686465999999
+			},
+			{
+				"stpid": "14132",
+				"stpnm": "Western Orange Line Station",
+				"lat": 41.804994,
+				"lon": -87.684022
+			},
+			{
+				"stpid": "15059",
+				"stpnm": "Western Pink Line Station",
+				"lat": 41.854391,
+				"lon": -87.685838
+			}
+		]
+	}
+}

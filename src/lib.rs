@@ -387,6 +387,16 @@ impl std::fmt::Debug for Request {
     }
 }
 
+/// A point on the map, in decimal degrees (WGS 84).
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Coordinates {
+    /// Latitude in degrees, e.g. `41.88`.
+    pub lat: f64,
+    /// Longitude in degrees, e.g. `-87.64`.
+    pub lon: f64,
+}
+
 pub(crate) fn chicago() -> Result<TimeZone, DecodeError> {
     Ok(TimeZone::get("America/Chicago")?)
 }

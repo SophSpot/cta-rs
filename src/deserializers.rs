@@ -50,6 +50,65 @@ where
     })
 }
 
+/// A JSON value that Bus Tracker sends as a number in some responses and a string in
+/// others, e.g. `"lat": 41.88` in stops but `"lat": "41.88"` in vehicles.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum NumOrStr<T> {
+    Num(T),
+    Str(String),
+}
+
+/// Reads a number sent either as a JSON number or as a string, e.g. `456` or `"456"`.
+pub fn num_or_str<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: FromStr + Deserialize<'de>,
+    T::Err: Display,
+{
+    match NumOrStr::<T>::deserialize(d)? {
+        NumOrStr::Num(n) => Ok(n),
+        NumOrStr::Str(s) => s.trim().parse().map_err(serde::de::Error::custom),
+    }
+}
+
+/// Like [`num_or_str`], but a missing value, `null`, or `""` is `None`.
+pub fn opt_num_or_str<'de, D, T>(d: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: FromStr + Deserialize<'de>,
+    T::Err: Display,
+{
+    match Option::<NumOrStr<T>>::deserialize(d)? {
+        None => Ok(None),
+        Some(NumOrStr::Num(n)) => Ok(Some(n)),
+        Some(NumOrStr::Str(s)) if s.trim().is_empty() => Ok(None),
+        Some(NumOrStr::Str(s)) => s.trim().parse().map(Some).map_err(serde::de::Error::custom),
+    }
+}
+
+/// Reads an optional boolean sent as `true`/`false` or as `"true"`/`"false"` (any case).
+/// A missing value, `null`, or `""` is `None`.
+pub fn opt_bool_or_str<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum BoolOrStr {
+        Bool(bool),
+        Str(String),
+    }
+
+    match Option::<BoolOrStr>::deserialize(d)? {
+        None => Ok(None),
+        Some(BoolOrStr::Bool(b)) => Ok(Some(b)),
+        Some(BoolOrStr::Str(s)) => match s.trim().to_ascii_lowercase().as_str() {
+            "" => Ok(None),
+            "true" => Ok(Some(true)),
+            "false" => Ok(Some(false)),
+            _ => Err(serde::de::Error::custom(format!("not a boolean: {s:?}"))),
+        },
+    }
+}
+
 /// Reads a Bus Tracker local time, `"YYYYMMDD HH:MM:SS"` or `"YYYYMMDD HH:MM"`.
 ///
 /// Bus Tracker sends seconds when a request has `tmres=s`, and minutes otherwise. Some
@@ -96,6 +155,51 @@ mod tests {
         ] {
             assert!(parse_bus_time(s).is_err(), "{s:?}");
         }
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct Nums {
+        #[serde(deserialize_with = "num_or_str")]
+        lat: f64,
+        #[serde(deserialize_with = "num_or_str")]
+        id: u32,
+        #[serde(default, deserialize_with = "opt_num_or_str")]
+        seq: Option<u32>,
+        #[serde(default, deserialize_with = "opt_bool_or_str")]
+        ada: Option<bool>,
+    }
+
+    fn nums(json: &str) -> Result<Nums, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+
+    #[test]
+    fn numbers_or_strings() {
+        let n = nums(r#"{"lat": 41.88, "id": 456}"#).unwrap();
+        assert_eq!((n.lat, n.id, n.seq, n.ada), (41.88, 456, None, None));
+        let n = nums(r#"{"lat": "41.88", "id": "456", "seq": "7", "ada": "TRUE"}"#).unwrap();
+        assert_eq!(
+            (n.lat, n.id, n.seq, n.ada),
+            (41.88, 456, Some(7), Some(true))
+        );
+        let n = nums(r#"{"lat": 1, "id": 1, "seq": 7, "ada": false}"#).unwrap();
+        assert_eq!((n.seq, n.ada), (Some(7), Some(false)));
+    }
+
+    #[test]
+    fn empty_and_null_optionals_are_none() {
+        let n = nums(r#"{"lat": 1, "id": 1, "seq": "", "ada": ""}"#).unwrap();
+        assert_eq!((n.seq, n.ada), (None, None));
+        let n = nums(r#"{"lat": 1, "id": 1, "seq": null, "ada": null}"#).unwrap();
+        assert_eq!((n.seq, n.ada), (None, None));
+    }
+
+    #[test]
+    fn bad_numbers_and_booleans_are_errors() {
+        assert!(nums(r#"{"lat": "north", "id": 1}"#).is_err());
+        assert!(nums(r#"{"lat": 1, "id": "sad"}"#).is_err());
+        assert!(nums(r#"{"lat": 1, "id": -1}"#).is_err());
+        assert!(nums(r#"{"lat": 1, "id": 1, "ada": "yes"}"#).is_err());
     }
 
     #[test]
