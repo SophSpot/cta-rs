@@ -196,10 +196,12 @@ The [`examples/`](examples) directory has runnable programs:
 | `custom_reqwest` | Using your own `reqwest::Client` |
 | `custom_http` | Implementing `AsyncHttpClient` (runs without a key) |
 | `bus_arrivals` | Upcoming buses at one or more bus stops |
+| `bus_route` | A bus route's stops in order, by direction |
 
 ```sh
 CTA_TRAIN_API_KEY=... cargo run --example arrivals
 CTA_BUS_API_KEY=... cargo run --example bus_arrivals -- 456
+CTA_BUS_API_KEY=... cargo run --example bus_route -- 20 westbound
 cargo run --example custom_http
 ```
 

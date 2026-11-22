@@ -55,3 +55,7 @@ required-features = ["reqwest"]
 [[example]]
 name = "bus_arrivals"
 required-features = ["reqwest"]
+
+[[example]]
+name = "bus_route"
+required-features = ["reqwest"]
