@@ -1,8 +1,9 @@
-//! A client for the [CTA Train Tracker API](https://www.transitchicago.com/developers/traintracker/):
-//! live arrival predictions, train locations, and individual train runs for the
-//! Chicago 'L'.
+//! A client for the CTA's [Train Tracker](https://www.transitchicago.com/developers/traintracker/)
+//! and [Bus Tracker](https://www.transitchicago.com/developers/bustracker/) APIs: live
+//! arrival predictions, vehicle locations, routes, stops, and detours for Chicago's 'L'
+//! trains and buses.
 //!
-//! You need a free API key from the CTA to make requests.
+//! You need a free API key from the CTA for each API you use.
 //!
 //! # Quick start (async)
 //!
@@ -20,6 +21,25 @@
 //! let arrivals = client.trains().arrivals(&ArrivalsQuery::at(StationId(40380))).await?;
 //! for a in &arrivals {
 //!     println!("{} line to {} in {}", a.route, a.destination, a.eta());
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Quick start (buses)
+//!
+//! ```no_run
+//! # #[cfg(feature = "reqwest")]
+//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+//! use cta::AsyncClient;
+//! use cta::buses::{PredictionsQuery, StopId};
+//!
+//! let client = AsyncClient::builder().bus_key("your-bus-api-key").build();
+//!
+//! // Madison & Jefferson
+//! let query = PredictionsQuery::at(StopId(456)).route("20");
+//! for p in client.buses().predictions(&query).await? {
+//!     println!("{} to {}: {:?}", p.route, p.destination, p.countdown);
 //! }
 //! # Ok(())
 //! # }
@@ -46,19 +66,33 @@
 //!
 //! # Endpoints
 //!
+//! Train Tracker, on [`AsyncClient::trains`] and [`BlockingClient::trains`]:
+//!
 //! | Method | What it returns |
 //! |---|---|
 //! | `arrivals` | Predicted arrivals at up to 4 stations or platforms ([`trains::Arrival`]) |
 //! | `locations` | Every train currently running on one or more lines ([`trains::TrainLocation`]) |
 //! | `follow` | One train's position and its upcoming stops ([`trains::FollowedTrain`]) |
 //!
-//! These are on [`AsyncClient::trains`] and [`BlockingClient::trains`].
+//! Bus Tracker, on [`AsyncClient::buses`] and [`BlockingClient::buses`]:
+//!
+//! | Method | What it returns |
+//! |---|---|
+//! | `predictions` | Buses coming to up to 10 stops, or the upcoming stops of up to 10 buses ([`buses::Prediction`]) |
+//! | `vehicles` | Where buses are, by bus or by route ([`buses::Vehicle`]) |
+//! | `routes`, `directions`, `stops` | Routes, the directions they run, and their stops |
+//! | `patterns` | The paths routes take, with stops in order ([`buses::Pattern`]) |
+//! | `detours` | Current detours ([`buses::Detour`]) |
+//! | `locales`, `time` | The languages Bus Tracker accepts, and its clock |
+//!
+//! See [`buses`] for more, including how detours link to stops and patterns.
 //!
 //! # Keys
 //!
-//! Each CTA API has its own key, set on the [`ClientBuilder`](client::ClientBuilder). A
-//! client without a key is valid: calling an API whose key isn't set returns
-//! [`Error::MissingKey`] without sending a request.
+//! Each CTA API has its own key, set on the [`ClientBuilder`](client::ClientBuilder) with
+//! [`train_key`](client::ClientBuilder::train_key) or
+//! [`bus_key`](client::ClientBuilder::bus_key). A client without a key is valid: calling
+//! an API whose key isn't set returns [`Error::MissingKey`] without sending a request.
 //!
 //! # Features
 //!
@@ -72,9 +106,9 @@
 //!
 //! # Without an HTTP client
 //!
-//! The request builders and parsers in [`trains`] (such as [`trains::arrivals_request`] and
-//! [`trains::parse_arrivals`]) do no I/O, so you can send the request however you like and
-//! hand the response body to the parser.
+//! The request builders and parsers in [`trains`] and [`buses`] (such as
+//! [`trains::arrivals_request`] and [`buses::parse_predictions`]) do no I/O, so you can
+//! send the request however you like and hand the response body to the parser.
 //!
 //! # Times
 //!

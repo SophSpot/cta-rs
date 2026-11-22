@@ -1,13 +1,69 @@
-//! The Bus Tracker API.
+//! The Bus Tracker API: predictions, bus locations, routes, stops, patterns, and detours
+//! for CTA buses.
 //!
 //! Requests need a Bus Tracker key, set with
-//! [`ClientBuilder::bus_key`](crate::client::ClientBuilder::bus_key).
+//! [`ClientBuilder::bus_key`](crate::client::ClientBuilder::bus_key). Without one, every
+//! method returns [`Error::MissingKey`](crate::Error::MissingKey).
 //!
 //! Most users call the methods on [`AsyncClient::buses`](crate::AsyncClient::buses) or
 //! [`BlockingClient::buses`](crate::BlockingClient::buses). The `*_request` and `parse_*`
 //! functions are for sending requests yourself: they build the URL and parse the response
 //! body without doing any I/O.
+//!
+//! # Endpoints
+//!
+//! | Method | What it returns |
+//! |---|---|
+//! | [`predictions`](crate::client::Buses::predictions) | Buses coming to up to 10 stops, or the upcoming stops of up to 10 buses ([`Prediction`]) |
+//! | [`vehicles`](crate::client::Buses::vehicles) | Where buses are: up to 10 buses by ID, or every bus on up to 10 routes ([`Vehicle`]) |
+//! | [`routes`](crate::client::Buses::routes) | Every bus route ([`RouteInfo`]) |
+//! | [`directions`](crate::client::Buses::directions) | The directions a route runs in ([`DirectionInfo`]) |
+//! | [`stops`](crate::client::Buses::stops) | Stops on a route in one direction, or up to 10 stops by ID ([`Stop`]) |
+//! | [`patterns`](crate::client::Buses::patterns) | The paths a route takes, with stops in order ([`Pattern`]) |
+//! | [`detours`](crate::client::Buses::detours) | Current detours ([`Detour`]) |
+//! | [`locales`](crate::client::Buses::locales) | The languages Bus Tracker accepts ([`LocaleInfo`]) |
+//! | [`time`](crate::client::Buses::time) | Bus Tracker's clock |
+//!
+//! IDs that don't exist, and stops or routes with no service right now, are left out of
+//! the results rather than reported as errors: Bus Tracker reports both the same way.
+//!
+//! # Detours
+//!
+//! A detour temporarily changes where buses on a route go. Detours show up in three
+//! places, linked by the same [`DetourId`]:
+//!
+//! | Call | What it tells you |
+//! |---|---|
+//! | [`detours`](crate::client::Buses::detours) | Which routes and directions are detoured, and when: [`Detour`] |
+//! | [`stops`](crate::client::Buses::stops) | Which stops a detour adds or skips: [`Stop::detours_added`] and [`Stop::detours_removed`] |
+//! | [`patterns`](crate::client::Buses::patterns) | The detoured path, and the path it replaces: [`Pattern::detour`] and [`Pattern::original_points`] |
+//!
+//! Predictions don't say whether a bus is on a detour, but their times already account
+//! for it.
+//!
+//! Detours change during the day. To keep up, fetch `detours` regularly. When a detour
+//! appears, disappears, or gets a new [`version`](Detour::version), fetch the stops and
+//! patterns again for the routes it [`affects`](Detour::affects).
+//!
+//! Canceled detours stay in the list with [`active`](Detour::active) set to `false`,
+//! because a bus may still be running one.
+//!
+//! ```no_run
+//! # #[cfg(feature = "reqwest")]
+//! # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+//! use cta::buses::{DetoursQuery, PatternsQuery};
+//!
+//! for detour in client.buses().detours(&DetoursQuery::route("49")).await? {
+//!     let patterns = client.buses().patterns(&PatternsQuery::route("49")).await?;
+//!     for p in patterns.iter().filter(|p| p.detour.as_ref() == Some(&detour.id)) {
+//!         println!("{} replaces {} points", p.id, p.original_points.len());
+//!     }
+//! }
+//! # Ok(())
+//! # }
+//! ```
 
+mod detours;
 mod directions;
 mod locales;
 mod patterns;
@@ -17,6 +73,7 @@ mod stops;
 mod time;
 mod vehicles;
 
+pub use detours::{Detour, DetourRoute, DetoursQuery, detours_request, parse_detours};
 pub use directions::{DirectionInfo, DirectionsQuery, directions_request, parse_directions};
 pub use locales::{LocaleInfo, LocalesQuery, locales_request, parse_locales};
 pub use patterns::{Pattern, PatternPoint, PatternsQuery, parse_patterns, patterns_request};

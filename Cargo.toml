@@ -4,10 +4,10 @@ version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
-description = "Client for the CTA Train Tracker API: arrivals, train locations, and runs for the Chicago 'L'"
+description = "Client for the CTA Train Tracker and Bus Tracker APIs: arrivals, vehicle locations, routes, stops, and detours for Chicago trains and buses"
 repository = "https://github.com/SophSpot/cta-rs"
 readme = "README.md"
-keywords = ["cta", "chicago", "transit", "train", "api"]
+keywords = ["cta", "chicago", "transit", "train", "bus"]
 categories = ["api-bindings", "web-programming::http-client"]
 exclude = [".github", "release-plz.toml"]
 
@@ -58,4 +58,8 @@ required-features = ["reqwest"]
 
 [[example]]
 name = "bus_route"
+required-features = ["reqwest"]
+
+[[example]]
+name = "bus_detours"
 required-features = ["reqwest"]

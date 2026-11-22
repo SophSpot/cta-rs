@@ -10,8 +10,8 @@ fn api_key() -> String {
 mod with_reqwest {
     use super::api_key;
     use cta::buses::{
-        Direction, DirectionsQuery, LocalesQuery, PatternId, PatternsQuery, PredictionsQuery,
-        RoutesQuery, StopId, StopsQuery, VehicleId, VehiclesQuery,
+        DetoursQuery, Direction, DirectionsQuery, LocalesQuery, PatternId, PatternsQuery,
+        PredictionsQuery, RoutesQuery, StopId, StopsQuery, VehicleId, VehiclesQuery,
     };
     use cta::client::AsyncClient;
     use cta::{Api, ApiErrorKind, Error};
@@ -196,6 +196,56 @@ mod with_reqwest {
 
     #[tokio::test]
     #[ignore = "hits the live CTA API"]
+    async fn detours_link_to_patterns() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        let detours = client
+            .buses()
+            .detours(&DetoursQuery::all())
+            .await
+            .expect("request should succeed");
+        let Some(detour) = detours.iter().find(|d| d.active && !d.affects.is_empty()) else {
+            return; // no active detours today; nothing more to check
+        };
+        let affected = &detour.affects[0];
+
+        // Filtering by route and direction finds the same detour.
+        let query =
+            DetoursQuery::route_direction(affected.route.clone(), affected.direction.clone());
+        let filtered = client
+            .buses()
+            .detours(&query)
+            .await
+            .expect("request should succeed");
+        assert!(filtered.iter().any(|d| d.id == detour.id), "{filtered:?}");
+
+        // The route's patterns usually include the detour's pattern.
+        let patterns = client
+            .buses()
+            .patterns(&PatternsQuery::route(affected.route.clone()))
+            .await
+            .expect("request should succeed");
+        if let Some(p) = patterns
+            .iter()
+            .find(|p| p.detour.as_ref() == Some(&detour.id))
+        {
+            assert!(!p.original_points.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
+    async fn unknown_route_has_no_detours() {
+        let client = AsyncClient::builder().bus_key(api_key()).build();
+        let detours = client
+            .buses()
+            .detours(&DetoursQuery::route("not-a-route"))
+            .await
+            .expect("an unknown route is empty, not an error");
+        assert!(detours.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore = "hits the live CTA API"]
     async fn locales() {
         let client = AsyncClient::builder().bus_key(api_key()).build();
         let locales = client
@@ -228,8 +278,8 @@ mod with_reqwest {
 mod with_ureq {
     use super::api_key;
     use cta::buses::{
-        DirectionsQuery, LocalesQuery, PatternsQuery, PredictionsQuery, RoutesQuery, StopId,
-        StopsQuery, VehiclesQuery,
+        DetoursQuery, DirectionsQuery, LocalesQuery, PatternsQuery, PredictionsQuery, RoutesQuery,
+        StopId, StopsQuery, VehiclesQuery,
     };
     use cta::client::BlockingClient;
     use cta::{ApiErrorKind, Error};
@@ -294,6 +344,16 @@ mod with_ureq {
             .patterns(&PatternsQuery::route("19"))
             .expect("request should succeed");
         assert!(patterns.iter().all(|p| p.stops().count() > 0));
+    }
+
+    #[test]
+    #[ignore = "hits the live CTA API"]
+    fn detours() {
+        let client = BlockingClient::builder().bus_key(api_key()).build();
+        client
+            .buses()
+            .detours(&DetoursQuery::all())
+            .expect("request should succeed");
     }
 
     #[test]

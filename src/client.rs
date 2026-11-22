@@ -79,6 +79,7 @@ struct StopsCall<'a>(&'a buses::StopsQuery);
 struct VehiclesCall<'a>(&'a buses::VehiclesQuery);
 struct PredictionsCall(buses::PredictionsQuery);
 struct PatternsCall<'a>(&'a buses::PatternsQuery);
+struct DetoursCall<'a>(&'a buses::DetoursQuery);
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -187,6 +188,17 @@ impl Endpoint for PatternsCall<'_> {
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         buses::parse_patterns(body)
+    }
+}
+
+impl Endpoint for DetoursCall<'_> {
+    type Output = Vec<buses::Detour>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        let (base, key) = config.bus()?;
+        Ok(buses::detours_request(base, key, self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        buses::parse_detours(body)
     }
 }
 
@@ -603,6 +615,30 @@ impl<H: AsyncHttpClient> Buses<'_, H> {
         self.client.call(PatternsCall(query)).await
     }
 
+    /// Detours affecting today's service, including canceled ones.
+    ///
+    /// See [Detours](crate::buses#detours) for how detours link to stops and patterns.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::buses::DetoursQuery;
+    ///
+    /// for d in client.buses().detours(&DetoursQuery::all()).await? {
+    ///     for a in &d.affects {
+    ///         println!("{} {} detoured until {}", a.route, a.direction, d.end);
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn detours(
+        &self,
+        query: &buses::DetoursQuery,
+    ) -> Result<Vec<buses::Detour>, Error<H::Error>> {
+        self.client.call(DetoursCall(query)).await
+    }
+
     /// The languages Bus Tracker accepts, for a query's `locale` method.
     ///
     /// See [`Locale`](buses::Locale) for what CTA translates today.
@@ -805,6 +841,16 @@ impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
         self.client.call(PatternsCall(query))
     }
 
+    /// Detours affecting today's service, including canceled ones.
+    ///
+    /// See [`Buses::detours`].
+    pub fn detours(
+        &self,
+        query: &buses::DetoursQuery,
+    ) -> Result<Vec<buses::Detour>, Error<H::Error>> {
+        self.client.call(DetoursCall(query))
+    }
+
     /// The languages Bus Tracker accepts, for a query's `locale` method.
     ///
     /// See [`Buses::locales`].
@@ -863,6 +909,7 @@ mod tests {
     const BUS_VEHICLES: &[u8] = include_bytes!("../tests/fixtures/bus_vehicles_by_id.json");
     const BUS_PREDICTIONS: &[u8] = include_bytes!("../tests/fixtures/bus_predictions_456.json");
     const BUS_PATTERNS: &[u8] = include_bytes!("../tests/fixtures/bus_patterns_20.json");
+    const BUS_DETOURS: &[u8] = include_bytes!("../tests/fixtures/bus_detours.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -1177,6 +1224,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn async_bus_detours() {
+        let http = FakeHttp::ok(BUS_DETOURS);
+        let query = buses::DetoursQuery::route_direction("49", buses::Direction::Southbound);
+        let detours = async_bus_client(http.clone())
+            .buses()
+            .detours(&query)
+            .await
+            .unwrap();
+        assert_eq!(detours.len(), 8);
+        let url = http.last_url();
+        assert_eq!(url.path(), "/bustime/api/v3/getdetours");
+        assert_eq!(
+            url.query(),
+            Some("key=k&rt=49&rtdir=Southbound&format=json")
+        );
+    }
+
+    #[tokio::test]
     async fn async_bus_locales() {
         let http = FakeHttp::ok(BUS_LOCALES);
         let locales = async_bus_client(http.clone())
@@ -1326,6 +1391,17 @@ mod tests {
             .unwrap();
         assert_eq!(patterns[0].id, buses::PatternId(954));
         assert_eq!(http.last_url().query(), Some("key=k&pid=954&format=json"));
+    }
+
+    #[test]
+    fn blocking_bus_detours() {
+        let http = FakeHttp::ok(BUS_DETOURS);
+        let detours = blocking_bus_client(http.clone())
+            .buses()
+            .detours(&buses::DetoursQuery::all())
+            .unwrap();
+        assert!(detours.iter().all(|d| d.active));
+        assert_eq!(http.last_url().query(), Some("key=k&format=json"));
     }
 
     #[test]

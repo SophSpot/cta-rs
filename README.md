@@ -2,18 +2,19 @@
 
 # cta
 
-A Rust client for the [CTA Train Tracker API](https://www.transitchicago.com/developers/traintracker/): live arrival predictions, train locations, and individual train runs for the Chicago 'L'.
+A Rust client for the CTA's [Train Tracker](https://www.transitchicago.com/developers/traintracker/) and [Bus Tracker](https://www.transitchicago.com/developers/bustracker/) APIs: live arrival predictions, vehicle locations, routes, stops, and detours for Chicago's 'L' trains and buses.
 
 - Async (reqwest) and blocking (ureq) clients with the same API
-- Typed results: lines are a `Route` enum, IDs are `StationId`/`StopId`, and times are time-zone-aware
+- Typed results: IDs like `StationId`, `StopId`, and `VehicleId` are distinct types, and times are time-zone-aware
+- Queries that can't be sent wrong: too many IDs, or a filter that doesn't apply, is caught before any request
 - Typed errors, so you can match on "invalid key" or "run not found"
 - Bring your own HTTP client, or skip HTTP entirely and use the parsers directly
 
 This crate is not affiliated with or endorsed by the Chicago Transit Authority.
 
-## Getting an API key
+## Getting API keys
 
-The Train Tracker API needs a free key. Apply on the CTA's [developer site](https://www.transitchicago.com/developers/traintracker/), then pass the key to the client. The examples below read it from the `CTA_TRAIN_API_KEY` environment variable.
+Each API needs its own free key. Apply on the CTA's developer site for [Train Tracker](https://www.transitchicago.com/developers/traintracker/) or [Bus Tracker](https://www.transitchicago.com/developers/bustracker/), then pass the key to the client with `train_key` or `bus_key`. You only need the key for the API you use. The examples below read them from the `CTA_TRAIN_API_KEY` and `CTA_BUS_API_KEY` environment variables.
 
 ## Installation
 
@@ -55,6 +56,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arrivals = client.trains().arrivals(&ArrivalsQuery::at(StationId(40380))).await?;
     for a in &arrivals {
         println!("{} Line to {} in {} min", a.route, a.destination, a.eta().as_mins());
+    }
+    Ok(())
+}
+```
+
+### Buses
+
+```rust
+use cta::AsyncClient;
+use cta::buses::{Countdown, PredictionsQuery, StopId};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let client = AsyncClient::builder()
+        .bus_key(std::env::var("CTA_BUS_API_KEY")?)
+        .build();
+
+    // Route 20 buses at Madison & Jefferson
+    let query = PredictionsQuery::at(StopId(456)).route("20");
+    for p in client.buses().predictions(&query).await? {
+        match p.countdown {
+            Countdown::Minutes(m) => println!("{} to {} in {m} min", p.route, p.destination),
+            other => println!("{} to {}: {other:?}", p.route, p.destination),
+        }
     }
     Ok(())
 }
@@ -197,11 +222,13 @@ The [`examples/`](examples) directory has runnable programs:
 | `custom_http` | Implementing `AsyncHttpClient` (runs without a key) |
 | `bus_arrivals` | Upcoming buses at one or more bus stops |
 | `bus_route` | A bus route's stops in order, by direction |
+| `bus_detours` | Current detours, with the stops they add or skip and their patterns |
 
 ```sh
 CTA_TRAIN_API_KEY=... cargo run --example arrivals
 CTA_BUS_API_KEY=... cargo run --example bus_arrivals -- 456
 CTA_BUS_API_KEY=... cargo run --example bus_route -- 20 westbound
+CTA_BUS_API_KEY=... cargo run --example bus_detours
 cargo run --example custom_http
 ```
 
