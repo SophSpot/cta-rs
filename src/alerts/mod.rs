@@ -10,13 +10,150 @@
 //! `parse_*` functions are for sending requests yourself: they build the URL and parse the
 //! response body without doing any I/O.
 
-use crate::{ApiError, DecodeError, ResponseError};
+mod route_status;
+
+pub use route_status::{
+    RouteStatus, RouteStatusQuery, ServiceKind, parse_route_status, route_status_request,
+};
+
+use crate::trains::{self, StationId};
+use crate::{ApiError, DecodeError, ResponseError, buses};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 /// The Customer Alerts API's base URL. The clients use this unless given another with
 /// [`ClientBuilder::alerts_base_url`](crate::client::ClientBuilder::alerts_base_url).
 pub const DEFAULT_BASE_URL: &str = "https://www.transitchicago.com/api/1.0/";
+
+/// A service that a status or alert is about: a bus route, a train route, a train
+/// station, or a systemwide group.
+///
+/// The IDs are the same ones the other APIs use, so a [`Service::BusRoute`] can be
+/// passed to [`buses`] calls and a [`Service::TrainRoute`] or [`Service::Station`] to
+/// [`trains`] calls.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum Service {
+    /// A bus route, e.g. `"20"` or `"X9"`.
+    BusRoute(buses::Route),
+    /// A train ('L') line.
+    TrainRoute(trains::Route),
+    /// A train station (4xxxx), covering all its platforms.
+    Station(StationId),
+    /// A systemwide group.
+    Systemwide(Systemwide),
+    /// An ID that doesn't match any of the above, kept as Customer Alerts sent it.
+    Other(String),
+}
+
+/// A group of services that systemwide alerts and statuses apply to.
+///
+/// Systemwide statuses are set separately from those of the routes they cover: an "all
+/// bus routes" alert doesn't change each bus route's status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum Systemwide {
+    /// All routes (`Systemwide`).
+    AllRoutes,
+    /// All bus routes (`Bus`).
+    AllBusRoutes,
+    /// All train routes (`Train`).
+    AllTrainRoutes,
+}
+
+impl Service {
+    /// Work out what kind of service an ID is, for responses that don't say.
+    ///
+    /// Checked in order: a systemwide group; a train line's exact code (`Brn`, not
+    /// `Brown`); a 5-digit station ID starting with 4; a bus route (digits with an
+    /// optional letter suffix, like `55A`, or a letter then digits, like `X9`);
+    /// otherwise [`Other`](Service::Other).
+    fn classify(id: &str) -> Self {
+        let id = id.trim();
+        if let Some(group) = Systemwide::from_id(id) {
+            return Service::Systemwide(group);
+        }
+        if let Some(line) = trains::Route::ALL
+            .into_iter()
+            .find(|r| r.code().eq_ignore_ascii_case(id))
+        {
+            return Service::TrainRoute(line);
+        }
+        if id.len() == 5 && id.starts_with('4') && id.bytes().all(|b| b.is_ascii_digit()) {
+            if let Ok(n) = id.parse() {
+                return Service::Station(StationId(n));
+            }
+        }
+        if is_bus_route(id) {
+            return Service::BusRoute(buses::Route::from(id));
+        }
+        Service::Other(id.to_owned())
+    }
+}
+
+impl Systemwide {
+    fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "Systemwide" => Some(Systemwide::AllRoutes),
+            "Bus" => Some(Systemwide::AllBusRoutes),
+            "Train" => Some(Systemwide::AllTrainRoutes),
+            _ => None,
+        }
+    }
+}
+
+/// Digits with an optional letter suffix (`20`, `55A`), or one letter then digits with
+/// an optional letter suffix (`X9`, `J14`, `N5`).
+fn is_bus_route(id: &str) -> bool {
+    let rest = match id.as_bytes().first() {
+        Some(b) if b.is_ascii_alphabetic() => &id[1..],
+        _ => id,
+    };
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    digits > 0 && rest[digits..].bytes().all(|b| b.is_ascii_alphabetic())
+}
+
+/// Normalize a color to lowercase `"#rrggbb"`. Customer Alerts sends `"c60c30"`,
+/// `"FFFFFF"`, or three-digit `"06c"`. Anything else is kept, lowercased.
+fn normalize_color(color: &str) -> String {
+    let hex = color.trim().trim_start_matches('#').to_ascii_lowercase();
+    if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return hex;
+    }
+    match hex.len() {
+        6 => format!("#{hex}"),
+        3 => {
+            let expanded: String = hex.chars().flat_map(|c| [c, c]).collect();
+            format!("#{expanded}")
+        }
+        _ => hex,
+    }
+}
+
+/// A query Customer Alerts would reject, caught before any request is sent.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum QueryError {
+    /// A query by service type was given no types.
+    #[error("a query by service type needs at least one type")]
+    NoTypes,
+    /// A query by route was given no routes.
+    #[error("a query by route needs at least one route")]
+    NoRoutes,
+}
+
+/// Remove duplicates, keeping the first occurrence.
+fn dedup<T: PartialEq>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut out = Vec::new();
+    for item in items {
+        if !out.contains(&item) {
+            out.push(item);
+        }
+    }
+    out
+}
 
 /// Error codes that mean "nothing matched your filters" rather than a failure.
 const NO_RESULTS: [u16; 2] = [25, 50];
@@ -28,10 +165,6 @@ const NO_RESULTS: [u16; 2] = [25, 50];
 /// a string, missing, `null`, or an array with one entry per requested service type.
 /// The first non-zero code is the error. Codes 25 and 50 ("no alerts/routes based on
 /// your filter criteria") mean an empty result, so `T` is parsed as usual.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used once alerts endpoints land")
-)]
 pub(crate) fn parse_envelope<T: DeserializeOwned>(
     body: &[u8],
     root: &str,
@@ -116,6 +249,55 @@ mod tests {
             Value::Array(a) => a.len(),
             _ => 1,
         }
+    }
+
+    #[test]
+    fn classifies_service_ids() {
+        use trains::Route::*;
+        for (id, expected) in [
+            ("Red", Service::TrainRoute(Red)),
+            ("Brn", Service::TrainRoute(Brown)),
+            ("G", Service::TrainRoute(Green)),
+            ("Y", Service::TrainRoute(Yellow)),
+            ("40380", Service::Station(StationId(40380))),
+            ("20", Service::BusRoute("20".into())),
+            ("206", Service::BusRoute("206".into())),
+            ("55A", Service::BusRoute("55A".into())),
+            ("X9", Service::BusRoute("X9".into())),
+            ("J14", Service::BusRoute("J14".into())),
+            ("N5", Service::BusRoute("N5".into())),
+            ("Systemwide", Service::Systemwide(Systemwide::AllRoutes)),
+            ("Bus", Service::Systemwide(Systemwide::AllBusRoutes)),
+            ("Train", Service::Systemwide(Systemwide::AllTrainRoutes)),
+        ] {
+            assert_eq!(Service::classify(id), expected, "{id}");
+        }
+    }
+
+    #[test]
+    fn unrecognized_ids_are_other() {
+        // Names aren't codes, and an unknown line like Purple Express isn't a bus route.
+        // (Numbers that aren't 5-digit 4xxxx station IDs, like "4038", match the bus
+        // pattern, so they're bus routes.)
+        for id in ["Brown", "Pexp", "", "20-A", "XY9", "Night Owl", "4038A1"] {
+            assert_eq!(
+                Service::classify(id),
+                Service::Other(id.to_owned()),
+                "{id:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn normalizes_colors() {
+        assert_eq!(normalize_color("c60c30"), "#c60c30");
+        assert_eq!(normalize_color("FFFFFF"), "#ffffff");
+        assert_eq!(normalize_color("06c"), "#0066cc");
+        assert_eq!(normalize_color("#AbC"), "#aabbcc");
+        assert_eq!(normalize_color(" 404040 "), "#404040");
+        assert_eq!(normalize_color(""), "");
+        assert_eq!(normalize_color("red"), "red");
+        assert_eq!(normalize_color("12345"), "12345");
     }
 
     #[test]

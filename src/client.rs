@@ -44,10 +44,6 @@ impl Config {
     }
 
     /// The Customer Alerts base URL. Customer Alerts needs no key.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used once alerts endpoints land")
-    )]
     fn alerts(&self) -> &Url {
         &self.alerts_base
     }
@@ -93,6 +89,7 @@ struct PredictionsCall(buses::PredictionsQuery);
 struct PatternsCall<'a>(&'a buses::PatternsQuery);
 struct DetoursCall<'a>(&'a buses::DetoursQuery);
 struct EnhancedDetoursCall<'a>(&'a buses::EnhancedDetoursQuery);
+struct RouteStatusCall<'a>(&'a alerts::RouteStatusQuery);
 
 impl Endpoint for ArrivalsCall<'_> {
     type Output = Vec<Arrival>;
@@ -223,6 +220,16 @@ impl Endpoint for EnhancedDetoursCall<'_> {
     }
     fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
         buses::parse_enhanced_detours(body)
+    }
+}
+
+impl Endpoint for RouteStatusCall<'_> {
+    type Output = Vec<alerts::RouteStatus>;
+    fn request(&self, config: &Config) -> Result<Request, Api> {
+        Ok(alerts::route_status_request(config.alerts(), self.0))
+    }
+    fn parse(body: &[u8]) -> Result<Self::Output, ResponseError> {
+        alerts::parse_route_status(body)
     }
 }
 
@@ -729,8 +736,34 @@ impl<H: AsyncHttpClient> Buses<'_, H> {
 ///
 /// Customer Alerts needs no key.
 pub struct Alerts<'a, H> {
-    #[expect(dead_code, reason = "used once alerts endpoints land")]
     client: &'a AsyncClient<H>,
+}
+
+impl<H: AsyncHttpClient> Alerts<'_, H> {
+    /// The current status of routes, stations, or systemwide groups.
+    ///
+    /// Each status reflects the most severe active alert affecting that service. A
+    /// station appears once for each line serving it.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "reqwest")]
+    /// # async fn run(client: cta::AsyncClient<reqwest::Client>) -> Result<(), Box<dyn std::error::Error>> {
+    /// use cta::alerts::RouteStatusQuery;
+    ///
+    /// for s in client.alerts().route_status(&RouteStatusQuery::all()).await? {
+    ///     if !s.is_normal() {
+    ///         println!("{}: {}", s.name, s.status);
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn route_status(
+        &self,
+        query: &alerts::RouteStatusQuery,
+    ) -> Result<Vec<alerts::RouteStatus>, Error<H::Error>> {
+        self.client.call(RouteStatusCall(query)).await
+    }
 }
 
 #[cfg(feature = "reqwest")]
@@ -953,8 +986,19 @@ impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
 ///
 /// Customer Alerts needs no key.
 pub struct BlockingAlerts<'a, H> {
-    #[expect(dead_code, reason = "used once alerts endpoints land")]
     client: &'a BlockingClient<H>,
+}
+
+impl<H: BlockingHttpClient> BlockingAlerts<'_, H> {
+    /// The current status of routes, stations, or systemwide groups.
+    ///
+    /// See [`Alerts::route_status`].
+    pub fn route_status(
+        &self,
+        query: &alerts::RouteStatusQuery,
+    ) -> Result<Vec<alerts::RouteStatus>, Error<H::Error>> {
+        self.client.call(RouteStatusCall(query))
+    }
 }
 
 impl<H: BlockingHttpClient> ClientBuilder<Blocking, H> {
@@ -1006,6 +1050,7 @@ mod tests {
     const BUS_PATTERNS: &[u8] = include_bytes!("../tests/fixtures/bus_patterns_20.json");
     const BUS_DETOURS: &[u8] = include_bytes!("../tests/fixtures/bus_detours.json");
     const BUS_ENHANCED: &[u8] = include_bytes!("../tests/fixtures/bus_enhanced_detours.json");
+    const ALERTS_ROUTES: &[u8] = include_bytes!("../tests/fixtures/alerts_routes.json");
 
     #[derive(Debug, thiserror::Error)]
     #[error("connection refused")]
@@ -1185,6 +1230,38 @@ mod tests {
         let out = format!("{client:?}");
         assert!(out.contains("train_key: None"), "{out}");
         assert!(out.contains("bus_key: None"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn async_alerts_route_status_needs_no_key() {
+        let http = FakeHttp::ok(ALERTS_ROUTES);
+        // No keys at all.
+        let client = AsyncClient::builder().http(http.clone()).build();
+        let statuses = client
+            .alerts()
+            .route_status(&alerts::RouteStatusQuery::all())
+            .await
+            .unwrap();
+        assert_eq!(statuses.len(), 138);
+        let url = http.last_url();
+        assert_eq!(url.host_str(), Some("www.transitchicago.com"));
+        assert_eq!(url.path(), "/api/1.0/routes.aspx");
+        assert_eq!(url.query(), Some("outputType=JSON"));
+    }
+
+    #[test]
+    fn blocking_alerts_route_status() {
+        let http = FakeHttp::ok(ALERTS_ROUTES);
+        let client = BlockingClient::builder()
+            .alerts_base_url(Url::parse("http://localhost:8080/api/1.0").unwrap())
+            .http(http.clone())
+            .build();
+        let query = alerts::RouteStatusQuery::train_routes([Route::Red]).unwrap();
+        client.alerts().route_status(&query).unwrap();
+        assert_eq!(
+            http.last_url().as_str(),
+            "http://localhost:8080/api/1.0/routes.aspx?routeid=Red&outputType=JSON"
+        );
     }
 
     #[test]

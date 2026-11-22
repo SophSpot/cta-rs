@@ -112,10 +112,6 @@ pub fn opt_bool_or_str<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<
 /// Reads text that Customer Alerts may wrap as `{"#cdata-section": "..."}` (its JSON is
 /// converted from XML), or send as a plain string. Trims it; missing, `null`, or empty
 /// text is `None`.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used once alerts endpoints land")
-)]
 pub fn opt_cdata<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
