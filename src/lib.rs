@@ -119,6 +119,7 @@
 
 #![warn(missing_docs)]
 
+pub mod alerts;
 pub mod buses;
 pub mod client;
 mod deserializers;
@@ -139,12 +140,15 @@ pub enum Api {
     Train,
     /// The Bus Tracker API: predictions, vehicles, routes, stops, patterns, and detours.
     Bus,
+    /// The Customer Alerts API: service status and alerts. It needs no key.
+    Alerts,
 }
 
 impl std::fmt::Display for Api {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Api::Bus => "Bus Tracker",
+            Api::Alerts => "Customer Alerts",
             Api::Train => "Train Tracker",
         })
     }
@@ -182,8 +186,10 @@ impl std::error::Error for ApiError {}
 
 /// Known CTA errors, as returned by [`ApiError::kind`].
 ///
-/// Train Tracker errors are classified by code, Bus Tracker errors by message. Kinds
-/// marked "Train Tracker only" are never returned for Bus Tracker errors.
+/// Train Tracker errors are classified by code, Bus Tracker errors by message. Customer
+/// Alerts codes mean different things from Train Tracker's, so only its 900 has a named
+/// kind ([`ServerError`](Self::ServerError)). Kinds marked "Train Tracker only" are never
+/// returned for the other APIs.
 ///
 /// New kinds may be added in future versions, so a `match` needs a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -225,8 +231,8 @@ pub enum ApiErrorKind {
     NoPredictions,
     /// The CTA had an internal error.
     ///
-    /// Train Tracker code 900; Bus Tracker "Internal server error - Unable to complete
-    /// request at this time".
+    /// Train Tracker and Customer Alerts code 900; Bus Tracker "Internal server error -
+    /// Unable to complete request at this time".
     ServerError,
     /// An error without a named kind. Check [`ApiError::code`] and [`ApiError::message`].
     Other,
@@ -237,6 +243,15 @@ impl ApiError {
     pub(crate) fn train(code: u16, message: String) -> Self {
         Self {
             api: Api::Train,
+            code: Some(code),
+            message,
+        }
+    }
+
+    /// A Customer Alerts error with its `ErrorCode` and `ErrorMessage`.
+    pub(crate) fn alerts(code: u16, message: String) -> Self {
+        Self {
+            api: Api::Alerts,
             code: Some(code),
             message,
         }
@@ -267,6 +282,8 @@ impl ApiError {
             (Api::Train, Some(code)) => train_kind(code),
             (Api::Train, None) => ApiErrorKind::Other,
             (Api::Bus, _) => bus_kind(&self.message),
+            (Api::Alerts, Some(900)) => ApiErrorKind::ServerError,
+            (Api::Alerts, _) => ApiErrorKind::Other,
         }
     }
 }
@@ -556,6 +573,34 @@ mod tests {
             message: "Something new".into(),
         };
         assert_eq!(e.kind(), ApiErrorKind::Other);
+    }
+
+    #[test]
+    fn alerts_codes_are_not_train_codes() {
+        // 101 is an invalid key for Train Tracker, but an invalid `type` for Customer Alerts.
+        assert_eq!(
+            ApiError::train(101, String::new()).kind(),
+            ApiErrorKind::InvalidKey
+        );
+        assert_eq!(
+            ApiError::alerts(101, String::new()).kind(),
+            ApiErrorKind::Other
+        );
+        assert_eq!(
+            ApiError::alerts(900, String::new()).kind(),
+            ApiErrorKind::ServerError
+        );
+        for code in [100, 102, 103, 104, 105, 106, 107, 500] {
+            assert_eq!(
+                ApiError::alerts(code, String::new()).kind(),
+                ApiErrorKind::Other,
+                "{code}"
+            );
+        }
+        assert_eq!(
+            ApiError::alerts(900, "Server Error".into()).to_string(),
+            "Customer Alerts error 900: Server Error"
+        );
     }
 
     #[test]

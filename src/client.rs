@@ -4,7 +4,7 @@ use crate::trains::{
     Arrival, ArrivalsQuery, FollowedTrain, LocationsQuery, TrainLocation, arrivals_request,
     follow_request, locations_request, parse_arrivals, parse_follow, parse_locations,
 };
-use crate::{Api, Error, Request, ResponseError, buses, trains};
+use crate::{Api, Error, Request, ResponseError, alerts, buses, trains};
 use jiff::ZonedDateTime;
 use std::fmt;
 use std::marker::PhantomData;
@@ -16,6 +16,7 @@ struct Config {
     train_base: Url,
     bus_key: Option<String>,
     bus_base: Url,
+    alerts_base: Url,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -24,6 +25,7 @@ impl Default for Config {
             train_base: Url::parse(trains::DEFAULT_BASE_URL).expect("default base URL is valid"),
             bus_key: None,
             bus_base: Url::parse(buses::DEFAULT_BASE_URL).expect("default base URL is valid"),
+            alerts_base: Url::parse(alerts::DEFAULT_BASE_URL).expect("default base URL is valid"),
         }
     }
 }
@@ -40,6 +42,15 @@ impl Config {
         let key = self.bus_key.as_deref().ok_or(Api::Bus)?;
         Ok((&self.bus_base, key))
     }
+
+    /// The Customer Alerts base URL. Customer Alerts needs no key.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "used once alerts endpoints land")
+    )]
+    fn alerts(&self) -> &Url {
+        &self.alerts_base
+    }
 }
 
 impl fmt::Debug for Config {
@@ -49,6 +60,7 @@ impl fmt::Debug for Config {
             .field("train_base_url", &self.train_base.as_str())
             .field("bus_key", &self.bus_key.as_ref().map(|_| "REDACTED"))
             .field("bus_base_url", &self.bus_base.as_str())
+            .field("alerts_base_url", &self.alerts_base.as_str())
             .finish()
     }
 }
@@ -302,6 +314,13 @@ impl<M, H> ClientBuilder<M, H> {
         self
     }
 
+    /// Send Customer Alerts requests to `url` instead of the CTA, e.g. a local mock
+    /// server. Customer Alerts needs no key.
+    pub fn alerts_base_url(mut self, url: Url) -> Self {
+        self.config.alerts_base = with_trailing_slash(url);
+        self
+    }
+
     /// The HTTP client to send requests with.
     pub fn http<H2>(self, http: H2) -> ClientBuilder<M, H2> {
         ClientBuilder {
@@ -400,6 +419,11 @@ impl<H> AsyncClient<H> {
     /// The Bus Tracker API.
     pub fn buses(&self) -> Buses<'_, H> {
         Buses { client: self }
+    }
+
+    /// The Customer Alerts API: service status and alerts. It needs no key.
+    pub fn alerts(&self) -> Alerts<'_, H> {
+        Alerts { client: self }
     }
 }
 
@@ -701,6 +725,14 @@ impl<H: AsyncHttpClient> Buses<'_, H> {
     }
 }
 
+/// The Customer Alerts API on an [`AsyncClient`]. Created by [`AsyncClient::alerts`].
+///
+/// Customer Alerts needs no key.
+pub struct Alerts<'a, H> {
+    #[expect(dead_code, reason = "used once alerts endpoints land")]
+    client: &'a AsyncClient<H>,
+}
+
 #[cfg(feature = "reqwest")]
 impl AsyncHttpClient for reqwest::Client {
     type Error = reqwest::Error;
@@ -760,6 +792,11 @@ impl<H> BlockingClient<H> {
     /// The Bus Tracker API
     pub fn buses(&self) -> BlockingBuses<'_, H> {
         BlockingBuses { client: self }
+    }
+
+    /// The Customer Alerts API: service status and alerts. It needs no key.
+    pub fn alerts(&self) -> BlockingAlerts<'_, H> {
+        BlockingAlerts { client: self }
     }
 }
 
@@ -909,6 +946,15 @@ impl<H: BlockingHttpClient> BlockingBuses<'_, H> {
     ) -> Result<Vec<buses::LocaleInfo>, Error<H::Error>> {
         self.client.call(LocalesCall(query))
     }
+}
+
+/// The Customer Alerts API on a [`BlockingClient`]. Created by
+/// [`BlockingClient::alerts`].
+///
+/// Customer Alerts needs no key.
+pub struct BlockingAlerts<'a, H> {
+    #[expect(dead_code, reason = "used once alerts endpoints land")]
+    client: &'a BlockingClient<H>,
 }
 
 impl<H: BlockingHttpClient> ClientBuilder<Blocking, H> {
@@ -1139,6 +1185,19 @@ mod tests {
         let out = format!("{client:?}");
         assert!(out.contains("train_key: None"), "{out}");
         assert!(out.contains("bus_key: None"), "{out}");
+    }
+
+    #[test]
+    fn alerts_config_defaults_and_overrides() {
+        let config = Config::default();
+        assert_eq!(config.alerts().as_str(), alerts::DEFAULT_BASE_URL);
+        let builder = AsyncClient::builder()
+            .alerts_base_url(Url::parse("http://localhost:8080/api/1.0").unwrap());
+        assert_eq!(
+            builder.config.alerts().as_str(),
+            "http://localhost:8080/api/1.0/"
+        );
+        assert!(format!("{builder:?}").contains("alerts_base_url"));
     }
 
     #[test]

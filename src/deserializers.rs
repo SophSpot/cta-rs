@@ -109,6 +109,32 @@ pub fn opt_bool_or_str<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<
     }
 }
 
+/// Reads text that Customer Alerts may wrap as `{"#cdata-section": "..."}` (its JSON is
+/// converted from XML), or send as a plain string. Trims it; missing, `null`, or empty
+/// text is `None`.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used once alerts endpoints land")
+)]
+pub fn opt_cdata<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Cdata {
+        Wrapped {
+            #[serde(rename = "#cdata-section")]
+            text: Option<String>,
+        },
+        Plain(String),
+    }
+
+    let text = match Option::<Cdata>::deserialize(d)? {
+        None => None,
+        Some(Cdata::Wrapped { text }) => text,
+        Some(Cdata::Plain(s)) => Some(s),
+    };
+    Ok(text.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()))
+}
+
 /// Reads a Bus Tracker local time, `"YYYYMMDD HH:MM:SS"` or `"YYYYMMDD HH:MM"`.
 ///
 /// Bus Tracker sends seconds when a request has `tmres=s`, and minutes otherwise. Some
@@ -213,6 +239,39 @@ mod tests {
         assert!(nums(r#"{"lat": 1, "id": "sad"}"#).is_err());
         assert!(nums(r#"{"lat": 1, "id": -1}"#).is_err());
         assert!(nums(r#"{"lat": 1, "id": 1, "ada": "yes"}"#).is_err());
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct Url {
+        #[serde(default, deserialize_with = "opt_cdata")]
+        url: Option<String>,
+    }
+
+    fn cdata(json: &str) -> Option<String> {
+        serde_json::from_str::<Url>(json).unwrap().url
+    }
+
+    #[test]
+    fn cdata_wrapped_or_plain() {
+        let url = "http://www.transitchicago.com/redline/";
+        assert_eq!(
+            cdata(r##"{"url": {"#cdata-section": " http://www.transitchicago.com/redline/ "}}"##)
+                .as_deref(),
+            Some(url)
+        );
+        assert_eq!(
+            cdata(r#"{"url": "http://www.transitchicago.com/redline/"}"#).as_deref(),
+            Some(url)
+        );
+        for empty in [
+            r#"{}"#,
+            r#"{"url": null}"#,
+            r#"{"url": ""}"#,
+            r##"{"url": {"#cdata-section": "  "}}"##,
+            r##"{"url": {}}"##,
+        ] {
+            assert_eq!(cdata(empty), None, "{empty}");
+        }
     }
 
     #[test]
